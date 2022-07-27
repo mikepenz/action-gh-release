@@ -52,7 +52,6 @@ const util_1 = __nccwpck_require__(4024);
 const fs_1 = __nccwpck_require__(7147);
 const mime_1 = __nccwpck_require__(9994);
 const path_1 = __nccwpck_require__(1017);
-const request_error_1 = __nccwpck_require__(537);
 class GitHubReleaser {
     constructor(github) {
         this.github = github;
@@ -125,7 +124,6 @@ const upload = (config, github, url, path, currentAssets) => __awaiter(void 0, v
 exports.upload = upload;
 const release = (config, releaser, maxRetries = 3) => __awaiter(void 0, void 0, void 0, function* () {
     var e_1, _a;
-    var _b;
     if (maxRetries <= 0) {
         core.error(`❌ Too many retries. Aborting...`);
         throw new Error('Too many retries.');
@@ -140,11 +138,11 @@ const release = (config, releaser, maxRetries = 3) => __awaiter(void 0, void 0, 
             try {
                 // you can't get a an existing draft by tag
                 // so we must find one in the list of all releases
-                for (var _c = __asyncValues(releaser.allReleases({
+                for (var _b = __asyncValues(releaser.allReleases({
                     owner,
                     repo
-                })), _d; _d = yield _c.next(), !_d.done;) {
-                    const response = _d.value;
+                })), _c; _c = yield _b.next(), !_c.done;) {
+                    const response = _c.value;
                     const rel = response.data.find(r => r.tag_name === tag);
                     if (rel) {
                         existingRelease = rel;
@@ -155,7 +153,7 @@ const release = (config, releaser, maxRetries = 3) => __awaiter(void 0, void 0, 
             catch (e_1_1) { e_1 = { error: e_1_1 }; }
             finally {
                 try {
-                    if (_d && !_d.done && (_a = _c.return)) yield _a.call(_c);
+                    if (_c && !_c.done && (_a = _b.return)) yield _a.call(_b);
                 }
                 finally { if (e_1) throw e_1.error; }
             }
@@ -209,7 +207,7 @@ const release = (config, releaser, maxRetries = 3) => __awaiter(void 0, void 0, 
         return rel.data;
     }
     catch (error) {
-        if (error instanceof request_error_1.RequestError && error.status === 404) {
+        if (error.status === 404) {
             const tag_name = tag;
             const name = config.input_name || tag;
             const body = (0, util_1.releaseBody)(config);
@@ -237,13 +235,8 @@ const release = (config, releaser, maxRetries = 3) => __awaiter(void 0, void 0, 
                 return newRelease.data;
             }
             catch (newError) {
-                if (newError instanceof request_error_1.RequestError) {
-                    // presume a race with competing metrix runs
-                    core.warning(`⚠️ GitHub release failed with status: ${newError.status}\n${JSON.stringify(((_b = newError.response) === null || _b === void 0 ? void 0 : _b.data) || '')}\nretrying... (${maxRetries - 1} retries remaining)`);
-                }
-                else {
-                    core.setFailed(`Failed to create the new release ${newError}`);
-                }
+                // presume a race with competing metrix runs
+                core.warning(`⚠️ GitHub release failed with status: \n${JSON.stringify(newError || '')}\nretrying... (${maxRetries - 1} retries remaining)`);
                 return (0, exports.release)(config, releaser, maxRetries - 1);
             }
         }
@@ -300,7 +293,6 @@ const core = __importStar(__nccwpck_require__(2186));
 const util_1 = __nccwpck_require__(4024);
 const github_1 = __nccwpck_require__(5928);
 const github_2 = __nccwpck_require__(5438);
-const request_error_1 = __nccwpck_require__(537);
 const process_1 = __nccwpck_require__(7282);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
@@ -357,12 +349,7 @@ function run() {
             core.setOutput('upload_url', rel.upload_url);
         }
         catch (error) {
-            if (error instanceof request_error_1.RequestError) {
-                core.setFailed(error.message);
-            }
-            else {
-                core.setFailed(`Failed to create the new release ${error}`);
-            }
+            core.setFailed(`Failed to create the new release: ${error}`);
         }
     });
 }
@@ -4777,88 +4764,6 @@ legacyRestEndpointMethods.VERSION = VERSION;
 
 exports.legacyRestEndpointMethods = legacyRestEndpointMethods;
 exports.restEndpointMethods = restEndpointMethods;
-//# sourceMappingURL=index.js.map
-
-
-/***/ }),
-
-/***/ 537:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-
-function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
-
-var deprecation = __nccwpck_require__(8932);
-var once = _interopDefault(__nccwpck_require__(1223));
-
-const logOnceCode = once(deprecation => console.warn(deprecation));
-const logOnceHeaders = once(deprecation => console.warn(deprecation));
-/**
- * Error with extra properties to help with debugging
- */
-
-class RequestError extends Error {
-  constructor(message, statusCode, options) {
-    super(message); // Maintains proper stack trace (only available on V8)
-
-    /* istanbul ignore next */
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
-
-    this.name = "HttpError";
-    this.status = statusCode;
-    let headers;
-
-    if ("headers" in options && typeof options.headers !== "undefined") {
-      headers = options.headers;
-    }
-
-    if ("response" in options) {
-      this.response = options.response;
-      headers = options.response.headers;
-    } // redact request credentials without mutating original request options
-
-
-    const requestCopy = Object.assign({}, options.request);
-
-    if (options.request.headers.authorization) {
-      requestCopy.headers = Object.assign({}, options.request.headers, {
-        authorization: options.request.headers.authorization.replace(/ .*$/, " [REDACTED]")
-      });
-    }
-
-    requestCopy.url = requestCopy.url // client_id & client_secret can be passed as URL query parameters to increase rate limit
-    // see https://developer.github.com/v3/#increasing-the-unauthenticated-rate-limit-for-oauth-applications
-    .replace(/\bclient_secret=\w+/g, "client_secret=[REDACTED]") // OAuth tokens can be passed as URL query parameters, although it is not recommended
-    // see https://developer.github.com/v3/#oauth2-token-sent-in-a-header
-    .replace(/\baccess_token=\w+/g, "access_token=[REDACTED]");
-    this.request = requestCopy; // deprecations
-
-    Object.defineProperty(this, "code", {
-      get() {
-        logOnceCode(new deprecation.Deprecation("[@octokit/request-error] `error.code` is deprecated, use `error.status`."));
-        return statusCode;
-      }
-
-    });
-    Object.defineProperty(this, "headers", {
-      get() {
-        logOnceHeaders(new deprecation.Deprecation("[@octokit/request-error] `error.headers` is deprecated, use `error.response.headers`."));
-        return headers || {};
-      }
-
-    });
-  }
-
-}
-
-exports.RequestError = RequestError;
 //# sourceMappingURL=index.js.map
 
 

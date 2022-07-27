@@ -2,7 +2,6 @@ import * as core from '@actions/core'
 import {paths, parseConfig, isTag, unmatchedPatterns, uploadUrl} from './util'
 import {release, upload, GitHubReleaser} from './github'
 import {getOctokit} from '@actions/github'
-import {RequestError} from '@octokit/request-error'
 
 import {env} from 'process'
 
@@ -63,11 +62,7 @@ async function run(): Promise<void> {
     core.setOutput('id', rel.id.toString())
     core.setOutput('upload_url', rel.upload_url)
   } catch (error) {
-    if (error instanceof RequestError) {
-      core.setFailed(error.message)
-    } else {
-      core.setFailed(`Failed to create the new release ${error}`)
-    }
+    core.setFailed(`Failed to create the new release: ${error}`)
   }
 }
 
