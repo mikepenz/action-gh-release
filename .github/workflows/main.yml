@@ -1,6 +1,9 @@
 name: Main
-
-on: [pull_request, push]
+on:
+  push:
+    tags:
+      - '*'
+  pull_request:
 
 jobs:
   build:
@@ -8,19 +11,31 @@ jobs:
     steps:
       # https://github.com/actions/checkout
       - name: Checkout
-        uses: actions/checkout@v2
-      - name: Install
-        run: npm ci
-      - name: Build
-        run: npm run build
-      - name: Test
-        run: npm run test
-      - name: Format
-        run: npm run fmtcheck
-      # - name: "check for uncommitted changes"
-      #   # Ensure no changes, but ignore node_modules dir since dev/fresh ci deps installed.
-      #   run: |
-      #     git diff --exit-code --stat -- . ':!node_modules' \
-      #     || (echo "##[error] found changed files after build. please 'npm run build && npm run fmt'" \
-      #             "and check in all changes" \
-      #         && exit 1)
+        uses: actions/checkout@v3
+
+      - name: Run NPM
+        run: |
+          npm run all
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: "Build Changelog"
+        id: github_release
+        uses: mikepenz/release-changelog-builder-action@v3
+        with:
+          configuration: ".github/config//configuration.json"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: ./
+        with:
+          body: ${{steps.github_release.outputs.changelog}}
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-b') || contains(github.ref, '-a') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
