@@ -13,6 +13,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Install NPM
+        run: |
+          npm install
+          
       - name: Run NPM
         run: |
           npm run all
