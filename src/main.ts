@@ -11,7 +11,7 @@ async function run(): Promise<void> {
     if (!config.input_tag_name && !isTag(config.github_ref) && !config.input_draft) {
       throw new Error(`⚠️ GitHub Releases requires a tag`)
     }
-    if (config.input_files) {
+    if (config.input_files && config.input_files?.length > 0) {
       const patterns = unmatchedPatterns(config.input_files)
       for (const pattern of patterns) {
         core.warning(`🤔 Pattern '${pattern}' does not match any files.`)
@@ -39,7 +39,7 @@ async function run(): Promise<void> {
     })
     //)
     const rel = await release(config, new GitHubReleaser(gh))
-    if (config.input_files) {
+    if (config.input_files && config.input_files?.length > 0) {
       const files = paths(config.input_files)
       if (files.length === 0) {
         core.warning(`🤔 ${config.input_files} not include valid file.`)
