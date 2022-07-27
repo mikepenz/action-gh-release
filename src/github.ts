@@ -4,7 +4,6 @@ import {Config, isTag, releaseBody} from './util'
 import {statSync, readFileSync} from 'fs'
 import {getType} from 'mime'
 import {basename} from 'path'
-import {RequestError} from '@octokit/request-error'
 
 type NewGitHub = InstanceType<typeof GitHub>
 
@@ -241,8 +240,8 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
       generate_release_notes
     })
     return rel.data
-  } catch (error) {
-    if (error instanceof RequestError && error.status === 404) {
+  } catch (error: any) {
+    if (error.status === 404) {
       const tag_name = tag
       const name = config.input_name || tag
       const body = releaseBody(config)
@@ -269,16 +268,12 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
         })
         return newRelease.data
       } catch (newError) {
-        if (newError instanceof RequestError) {
-          // presume a race with competing metrix runs
-          core.warning(
-            `⚠️ GitHub release failed with status: ${newError.status}\n${JSON.stringify(
-              newError.response?.data || ''
-            )}\nretrying... (${maxRetries - 1} retries remaining)`
-          )
-        } else {
-          core.setFailed(`Failed to create the new release ${newError}`)
-        }
+        // presume a race with competing metrix runs
+        core.warning(
+          `⚠️ GitHub release failed with status: \n${JSON.stringify(newError || '')}\nretrying... (${
+            maxRetries - 1
+          } retries remaining)`
+        )
 
         return release(config, releaser, maxRetries - 1)
       }
