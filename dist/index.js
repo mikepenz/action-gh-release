@@ -295,13 +295,14 @@ const github_1 = __nccwpck_require__(5928);
 const github_2 = __nccwpck_require__(5438);
 const process_1 = __nccwpck_require__(7282);
 function run() {
+    var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         try {
             const config = (0, util_1.parseConfig)(process_1.env);
             if (!config.input_tag_name && !(0, util_1.isTag)(config.github_ref) && !config.input_draft) {
                 throw new Error(`⚠️ GitHub Releases requires a tag`);
             }
-            if (config.input_files) {
+            if (config.input_files && ((_a = config.input_files) === null || _a === void 0 ? void 0 : _a.length) > 0) {
                 const patterns = (0, util_1.unmatchedPatterns)(config.input_files);
                 for (const pattern of patterns) {
                     core.warning(`🤔 Pattern '${pattern}' does not match any files.`);
@@ -328,7 +329,7 @@ function run() {
             });
             //)
             const rel = yield (0, github_1.release)(config, new github_1.GitHubReleaser(gh));
-            if (config.input_files) {
+            if (config.input_files && ((_b = config.input_files) === null || _b === void 0 ? void 0 : _b.length) > 0) {
                 const files = (0, util_1.paths)(config.input_files);
                 if (files.length === 0) {
                     core.warning(`🤔 ${config.input_files} not include valid file.`);
