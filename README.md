@@ -1,3 +1,7 @@
+## Fork
+
+This is a fork from https://github.com/softprops/action-gh-release with various patches and modifications applied - Please refer to the original action for any questions.
+
 <div align="center">
   📦 :octocat:
 </div>
@@ -11,12 +15,6 @@
 
 <div align="center">
   <img src="demo.png"/>
-</div>
-
-<div align="center">
-  <a href="https://github.com/softprops/action-gh-release/actions">
-		<img src="https://github.com/softprops/action-gh-release/workflows/Main/badge.svg"/>
-	</a>
 </div>
 
 <br />
@@ -41,122 +39,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: mikepenz/action-gh-release@{latest}
         if: startsWith(github.ref, 'refs/tags/')
-```
-
-You can also use push config tag filter
-
-```yaml
-name: Main
-
-on:
-  push:
-    tags:
-      - "v*.*.*"
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Release
-        uses: softprops/action-gh-release@v1
-```
-
-### ⬆️ Uploading release assets
-
-You can configure a number of options for your
-GitHub release and all are optional.
-
-A common case for GitHub releases is to upload your binary after its been validated and packaged.
-Use the `with.files` input to declare a newline-delimited list of glob expressions matching the files
-you wish to upload to GitHub releases. If you'd like you can just list the files by name directly.
-
-Below is an example of uploading a single asset named `Release.txt`
-
-```yaml
-name: Main
-
-on: push
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Build
-        run: echo ${{ github.sha }} > Release.txt
-      - name: Test
-        run: cat Release.txt
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: Release.txt
-```
-
-Below is an example of uploading more than one asset with a GitHub release
-
-```yaml
-name: Main
-
-on: push
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Build
-        run: echo ${{ github.sha }} > Release.txt
-      - name: Test
-        run: cat Release.txt
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            Release.txt
-            LICENSE
-```
-
-> **⚠️ Note:** Notice the `|` in the yaml syntax above ☝️. That let's you effectively declare a multi-line yaml string. You can learn more about multi-line yaml syntax [here](https://yaml-multiline.info)
-
-### 📝 External release notes
-
-Many systems exist that can help generate release notes for you. This action supports
-loading release notes from a path in your repository's build to allow for the flexibility
-of using any changelog generator for your releases, including a human 👩‍💻
-
-```yaml
-name: Main
-
-on: push
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Generate Changelog
-        run: echo "# Good things have arrived" > ${{ github.workspace }}-CHANGELOG.txt
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          body_path: ${{ github.workspace }}-CHANGELOG.txt
-          # note you'll typically need to create a personal access token
-          # with permissions to create releases in the other repo
-          token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
-        env:
-          GITHUB_REPOSITORY: my_gh_org/my_gh_repo
 ```
 
 ### 💅 Customizing
