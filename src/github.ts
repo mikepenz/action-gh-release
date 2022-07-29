@@ -1,3 +1,4 @@
+import fetch from 'node-fetch';
 import * as core from '@actions/core'
 import {GitHub} from '@actions/github/lib/utils'
 import {Config, isTag, releaseBody} from './util'
