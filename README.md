@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Release
         uses: mikepenz/action-gh-release@{latest}
         if: startsWith(github.ref, 'refs/tags/')
