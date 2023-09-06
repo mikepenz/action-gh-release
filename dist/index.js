@@ -45,12 +45,8 @@ var __asyncValues = (this && this.__asyncValues) || function (o) {
     function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
     function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.release = exports.upload = exports.mimeOrDefault = exports.asset = exports.GitHubReleaser = void 0;
-const node_fetch_1 = __importDefault(__nccwpck_require__(467));
 const core = __importStar(__nccwpck_require__(2186));
 const util_1 = __nccwpck_require__(4024);
 const fs_1 = __nccwpck_require__(7147);
@@ -110,7 +106,7 @@ const upload = (config, github, url, path, currentAssets) => __awaiter(void 0, v
     core.info(`⬆️ Uploading ${name}...`);
     const endpoint = new URL(url);
     endpoint.searchParams.append('name', name);
-    const resp = yield (0, node_fetch_1.default)(endpoint, {
+    const resp = yield fetch(endpoint, {
         headers: {
             'content-length': `${size}`,
             'content-type': mime,
@@ -2921,6 +2917,19 @@ class HttpClientResponse {
             }));
         });
     }
+    readBodyBuffer() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve) => __awaiter(this, void 0, void 0, function* () {
+                const chunks = [];
+                this.message.on('data', (chunk) => {
+                    chunks.push(chunk);
+                });
+                this.message.on('end', () => {
+                    resolve(Buffer.concat(chunks));
+                });
+            }));
+        });
+    }
 }
 exports.HttpClientResponse = HttpClientResponse;
 function isHttps(requestUrl) {
@@ -3425,7 +3434,13 @@ function getProxyUrl(reqUrl) {
         }
     })();
     if (proxyVar) {
-        return new URL(proxyVar);
+        try {
+            return new URL(proxyVar);
+        }
+        catch (_a) {
+            if (!proxyVar.startsWith('http://') && !proxyVar.startsWith('https://'))
+                return new URL(`http://${proxyVar}`);
+        }
     }
     else {
         return undefined;
@@ -6852,10 +6867,6 @@ function getNodeRequestOptions(request) {
 		agent = agent(parsedURL);
 	}
 
-	if (!headers.has('Connection') && !agent) {
-		headers.set('Connection', 'close');
-	}
-
 	// HTTP-network fetch step 4.2
 	// chunked encoding is handled by Node.js
 
@@ -7275,6 +7286,7 @@ exports.Headers = Headers;
 exports.Request = Request;
 exports.Response = Response;
 exports.FetchError = FetchError;
+exports.AbortError = AbortError;
 
 
 /***/ }),
@@ -10554,30 +10566,6 @@ module.exports = require("net");
 
 /***/ }),
 
-/***/ 5673:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:events");
-
-/***/ }),
-
-/***/ 4492:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:stream");
-
-/***/ }),
-
-/***/ 6915:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:string_decoder");
-
-/***/ }),
-
 /***/ 2037:
 /***/ ((module) => {
 
@@ -10615,6 +10603,14 @@ module.exports = require("punycode");
 
 "use strict";
 module.exports = require("stream");
+
+/***/ }),
+
+/***/ 1576:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("string_decoder");
 
 /***/ }),
 
@@ -11484,9 +11480,6 @@ class Processor {
             while (typeof (p = pattern.pattern()) === 'string' &&
                 (rest = pattern.rest())) {
                 const c = t.resolve(p);
-                // we can be reasonably sure that .. is a readable dir
-                if (c.isUnknown() && p !== '..')
-                    break;
                 t = c;
                 pattern = rest;
                 changed = true;
@@ -11502,14 +11495,10 @@ class Processor {
             // more strings for an unknown entry,
             // or a pattern starting with magic, mounted on t.
             if (typeof p === 'string') {
-                // must be final entry
-                if (!rest) {
-                    const ifDir = p === '..' || p === '' || p === '.';
-                    this.matches.add(t.resolve(p), absolute, ifDir);
-                }
-                else {
-                    this.subwalks.add(t, pattern);
-                }
+                // must not be final entry, otherwise we would have
+                // concatenated it earlier.
+                const ifDir = p === '..' || p === '' || p === '.';
+                this.matches.add(t.resolve(p), absolute, ifDir);
                 continue;
             }
             else if (p === minimatch_1.GLOBSTAR) {
@@ -13891,9 +13880,9 @@ const proc = typeof process === 'object' && process
         stdout: null,
         stderr: null,
     };
-const node_events_1 = __nccwpck_require__(5673);
-const node_stream_1 = __importDefault(__nccwpck_require__(4492));
-const node_string_decoder_1 = __nccwpck_require__(6915);
+const events_1 = __nccwpck_require__(2361);
+const stream_1 = __importDefault(__nccwpck_require__(2781));
+const string_decoder_1 = __nccwpck_require__(1576);
 /**
  * Return true if the argument is a Minipass stream, Node stream, or something
  * else that Minipass can interact with.
@@ -13901,7 +13890,7 @@ const node_string_decoder_1 = __nccwpck_require__(6915);
 const isStream = (s) => !!s &&
     typeof s === 'object' &&
     (s instanceof Minipass ||
-        s instanceof node_stream_1.default ||
+        s instanceof stream_1.default ||
         (0, exports.isReadable)(s) ||
         (0, exports.isWritable)(s));
 exports.isStream = isStream;
@@ -13910,17 +13899,17 @@ exports.isStream = isStream;
  */
 const isReadable = (s) => !!s &&
     typeof s === 'object' &&
-    s instanceof node_events_1.EventEmitter &&
+    s instanceof events_1.EventEmitter &&
     typeof s.pipe === 'function' &&
     // node core Writable streams have a pipe() method, but it throws
-    s.pipe !== node_stream_1.default.Writable.prototype.pipe;
+    s.pipe !== stream_1.default.Writable.prototype.pipe;
 exports.isReadable = isReadable;
 /**
  * Return true if the argument is a valid {@link Minipass.Writable}
  */
 const isWritable = (s) => !!s &&
     typeof s === 'object' &&
-    s instanceof node_events_1.EventEmitter &&
+    s instanceof events_1.EventEmitter &&
     typeof s.write === 'function' &&
     typeof s.end === 'function';
 exports.isWritable = isWritable;
@@ -14027,7 +14016,7 @@ const isEncodingOptions = (o) => !o.objectMode && !!o.encoding && o.encoding !==
  * `Events` is the set of event handler signatures that this object
  * will emit, see {@link Minipass.Events}
  */
-class Minipass extends node_events_1.EventEmitter {
+class Minipass extends events_1.EventEmitter {
     [FLOWING] = false;
     [PAUSED] = false;
     [PIPES] = [];
@@ -14082,7 +14071,7 @@ class Minipass extends node_events_1.EventEmitter {
         }
         this[ASYNC] = !!options.async;
         this[DECODER] = this[ENCODING]
-            ? new node_string_decoder_1.StringDecoder(this[ENCODING])
+            ? new string_decoder_1.StringDecoder(this[ENCODING])
             : null;
         //@ts-ignore - private option for debugging and testing
         if (options && options.debugExposeBuffer === true) {
@@ -17778,6 +17767,15 @@ class LRUCache {
             if (v !== oldVal) {
                 if (this.#hasFetchMethod && this.#isBackgroundFetch(oldVal)) {
                     oldVal.__abortController.abort(new Error('replaced'));
+                    const { __staleWhileFetching: s } = oldVal;
+                    if (s !== undefined && !noDisposeOnSet) {
+                        if (this.#hasDispose) {
+                            this.#dispose?.(s, k, 'set');
+                        }
+                        if (this.#hasDisposeAfter) {
+                            this.#disposed?.push([s, k, 'set']);
+                        }
+                    }
                 }
                 else if (!noDisposeOnSet) {
                     if (this.#hasDispose) {
