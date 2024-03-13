@@ -142,24 +142,37 @@ export const upload = async (
   core.info(`⬆️ Uploading ${name}...`)
   const endpoint = new URL(url)
   endpoint.searchParams.append('name', name)
-  const resp = await fetch(endpoint, {
-    headers: {
-      'content-length': `${size}`,
-      'content-type': mime,
-      authorization: `token ${config.github_token}`
-    },
-    method: 'POST',
-    body
-  })
-  const json = await resp.json()
-  if (resp.status !== 201) {
-    throw new Error(
-      `Failed to upload release asset ${name}. received status code ${resp.status}\n${json.message}\n${JSON.stringify(
-        json.errors
-      )}`
-    )
+  try {
+    const resp = await fetch(endpoint, {
+      headers: {
+        'content-length': `${size}`,
+        'content-type': mime,
+        authorization: `token ${config.github_token}`
+      },
+      method: 'POST',
+      body
+    })
+
+    let json: any
+    try {
+      json = await resp.json()
+    } catch (jsonError) {
+      core.error(`Failed to parse GitHub response ${jsonError}`)
+      json = {}
+    }
+
+    if (resp.status !== 201) {
+      throw new Error(
+        `Failed to upload release asset ${name}. received status code ${resp.status}\n${json.message}\n${JSON.stringify(
+          json.errors
+        )}`
+      )
+    }
+    return json
+  } catch (error) {
+    core.error(`Failed to upload asset ${error}`)
+    return {}
   }
-  return json
 }
 
 export const release = async (config: Config, releaser: Releaser, maxRetries = 3): Promise<Release> => {
