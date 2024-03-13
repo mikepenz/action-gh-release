@@ -28,7 +28,7 @@
     "@octokit/plugin-retry": "^7.0.3",
     "@octokit/plugin-throttling": "^9.0.3",
     "glob": "^10.3.10",
-    "mime": "^4.0.1"
+    "mime": "^3.0.0"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
