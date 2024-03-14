@@ -49,6 +49,9 @@ inputs:
   append_body:
     description: "Append to existing body instead of overwriting it. Default is false."
     required: false
+  make_latest:
+    description: "Wheter to make the new release the latest. Default is 'true'. Can be one of: 'true', 'false', 'legacy'"
+    required: false
 env:
   "GITHUB_TOKEN": "As provided by Github Actions"
 outputs:

@@ -20,6 +20,7 @@ export interface Config {
   input_discussion_category_name?: string
   input_generate_release_notes?: boolean
   input_append_body?: boolean
+  input_make_latest: 'true' | 'false' | 'legacy'
 }
 
 export const uploadUrl = (url: string): string => {
@@ -48,6 +49,7 @@ export const parseInputFiles = (files: string): string[] => {
 }
 
 export const parseConfig = (env: Env): Config => {
+  const ml = env.INPUT_MAKE_LATEST
   return {
     github_token: env.GITHUB_TOKEN || env.INPUT_TOKEN || '',
     github_ref: env.GITHUB_REF || '',
@@ -64,7 +66,8 @@ export const parseConfig = (env: Env): Config => {
     input_target_commitish: env.INPUT_TARGET_COMMITISH || undefined,
     input_discussion_category_name: env.INPUT_DISCUSSION_CATEGORY_NAME || undefined,
     input_generate_release_notes: env.INPUT_GENERATE_RELEASE_NOTES === 'true',
-    input_append_body: env.INPUT_APPEND_BODY === 'true'
+    input_append_body: env.INPUT_APPEND_BODY === 'true',
+    input_make_latest: ml === 'false' ? 'false' : ml === 'legacy' ? 'legacy' : 'true'
   }
 }
 

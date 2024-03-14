@@ -41,6 +41,7 @@ export interface Releaser {
     target_commitish: string | undefined
     discussion_category_name: string | undefined
     generate_release_notes: boolean | undefined
+    make_latest: 'true' | 'false' | 'legacy'
   }): Promise<{data: Release}>
 
   updateRelease(params: {
@@ -55,6 +56,7 @@ export interface Releaser {
     prerelease: boolean | undefined
     discussion_category_name: string | undefined
     generate_release_notes: boolean | undefined
+    make_latest: 'true' | 'false' | 'legacy'
   }): Promise<{data: Release}>
 
   allReleases(params: {owner: string; repo: string}): AsyncIterableIterator<{data: Release[]}>
@@ -244,6 +246,7 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
 
     const draft = config.input_draft !== undefined ? config.input_draft : existingRelease.draft
     const prerelease = config.input_prerelease !== undefined ? config.input_prerelease : existingRelease.prerelease
+    const make_latest = config.input_make_latest
 
     const rel = await releaser.updateRelease({
       owner,
@@ -256,7 +259,8 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
       draft,
       prerelease,
       discussion_category_name,
-      generate_release_notes
+      generate_release_notes,
+      make_latest
     })
     return rel.data
   } catch (error: any) {
@@ -267,6 +271,7 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
       const draft = config.input_draft
       const prerelease = config.input_prerelease
       const target_commitish = config.input_target_commitish
+      const make_latest = config.input_make_latest
       let commitMessage = ''
       if (target_commitish) {
         commitMessage = ` using commit "${target_commitish}"`
@@ -283,7 +288,8 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
           prerelease,
           target_commitish,
           discussion_category_name,
-          generate_release_notes
+          generate_release_notes,
+          make_latest
         })
         return newRelease.data
       } catch (newError) {

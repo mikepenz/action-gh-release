@@ -180,6 +180,7 @@ const release = async (config, releaser, maxRetries = 3) => {
         }
         const draft = config.input_draft !== undefined ? config.input_draft : existingRelease.draft;
         const prerelease = config.input_prerelease !== undefined ? config.input_prerelease : existingRelease.prerelease;
+        const make_latest = config.input_make_latest;
         const rel = await releaser.updateRelease({
             owner,
             repo,
@@ -191,7 +192,8 @@ const release = async (config, releaser, maxRetries = 3) => {
             draft,
             prerelease,
             discussion_category_name,
-            generate_release_notes
+            generate_release_notes,
+            make_latest
         });
         return rel.data;
     }
@@ -203,6 +205,7 @@ const release = async (config, releaser, maxRetries = 3) => {
             const draft = config.input_draft;
             const prerelease = config.input_prerelease;
             const target_commitish = config.input_target_commitish;
+            const make_latest = config.input_make_latest;
             let commitMessage = '';
             if (target_commitish) {
                 commitMessage = ` using commit "${target_commitish}"`;
@@ -219,7 +222,8 @@ const release = async (config, releaser, maxRetries = 3) => {
                     prerelease,
                     target_commitish,
                     discussion_category_name,
-                    generate_release_notes
+                    generate_release_notes,
+                    make_latest
                 });
                 return newRelease.data;
             }
@@ -398,6 +402,7 @@ const parseInputFiles = (files) => {
 };
 exports.parseInputFiles = parseInputFiles;
 const parseConfig = (env) => {
+    const ml = env.INPUT_MAKE_LATEST;
     return {
         github_token: env.GITHUB_TOKEN || env.INPUT_TOKEN || '',
         github_ref: env.GITHUB_REF || '',
@@ -414,7 +419,8 @@ const parseConfig = (env) => {
         input_target_commitish: env.INPUT_TARGET_COMMITISH || undefined,
         input_discussion_category_name: env.INPUT_DISCUSSION_CATEGORY_NAME || undefined,
         input_generate_release_notes: env.INPUT_GENERATE_RELEASE_NOTES === 'true',
-        input_append_body: env.INPUT_APPEND_BODY === 'true'
+        input_append_body: env.INPUT_APPEND_BODY === 'true',
+        input_make_latest: ml === 'false' ? 'false' : ml === 'legacy' ? 'legacy' : 'true'
     };
 };
 exports.parseConfig = parseConfig;
