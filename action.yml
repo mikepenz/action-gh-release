@@ -27,6 +27,9 @@ inputs:
   fail_on_unmatched_files:
     description: "Fails if any of the `files` globs match nothing. Defaults to false"
     required: false
+  fail_on_asset_upload_issue:
+    description: "Fails if any of the `files` fail to upload during the release. Defaults to false"
+    required: false
   repository:
     description: "Repository to make releases against, in <owner>/<repo> format"
     required: false

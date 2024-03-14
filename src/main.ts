@@ -14,7 +14,11 @@ async function run(): Promise<void> {
     if (config.input_files && config.input_files?.length > 0) {
       const patterns = unmatchedPatterns(config.input_files)
       for (const pattern of patterns) {
-        core.warning(`🤔 Pattern '${pattern}' does not match any files.`)
+        if (config.input_fail_on_unmatched_files) {
+          throw new Error(`⚠️  Pattern '${pattern}' does not match any files.`)
+        } else {
+          core.warning(`🤔 Pattern '${pattern}' does not match any files.`)
+        }
       }
       if (patterns.length > 0 && config.input_fail_on_unmatched_files) {
         throw new Error(`⚠️ There were unmatched files`)
@@ -42,7 +46,11 @@ async function run(): Promise<void> {
     if (config.input_files && config.input_files?.length > 0) {
       const files = paths(config.input_files)
       if (files.length === 0) {
-        core.warning(`🤔 ${config.input_files} not include valid file.`)
+        if (config.input_fail_on_unmatched_files) {
+          throw new Error(`⚠️ ${config.input_files} not include valid file.`)
+        } else {
+          core.warning(`🤔 ${config.input_files} not include valid file.`)
+        }
       }
       const currentAssets = rel.assets
       const assets = await Promise.all(
