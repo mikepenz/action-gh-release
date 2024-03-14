@@ -15,6 +15,7 @@ export interface Config {
   input_draft?: boolean
   input_prerelease?: boolean
   input_fail_on_unmatched_files?: boolean
+  input_fail_on_asset_upload_issue?: boolean
   input_target_commitish?: string
   input_discussion_category_name?: string
   input_generate_release_notes?: boolean
@@ -59,6 +60,7 @@ export const parseConfig = (env: Env): Config => {
     input_draft: env.INPUT_DRAFT ? env.INPUT_DRAFT === 'true' : undefined,
     input_prerelease: env.INPUT_PRERELEASE ? env.INPUT_PRERELEASE === 'true' : undefined,
     input_fail_on_unmatched_files: env.INPUT_FAIL_ON_UNMATCHED_FILES === 'true',
+    input_fail_on_asset_upload_issue: env.INPUT_FAIL_ON_ASSET_UPLOAD_ISSUE === 'true',
     input_target_commitish: env.INPUT_TARGET_COMMITISH || undefined,
     input_discussion_category_name: env.INPUT_DISCUSSION_CATEGORY_NAME || undefined,
     input_generate_release_notes: env.INPUT_GENERATE_RELEASE_NOTES === 'true',

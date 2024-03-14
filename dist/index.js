@@ -84,20 +84,41 @@ const upload = async (config, github, url, path, currentAssets) => {
     core.info(`⬆️ Uploading ${name}...`);
     const endpoint = new URL(url);
     endpoint.searchParams.append('name', name);
-    const resp = await fetch(endpoint, {
-        headers: {
-            'content-length': `${size}`,
-            'content-type': mime,
-            authorization: `token ${config.github_token}`
-        },
-        method: 'POST',
-        body
-    });
-    const json = await resp.json();
-    if (resp.status !== 201) {
-        throw new Error(`Failed to upload release asset ${name}. received status code ${resp.status}\n${json.message}\n${JSON.stringify(json.errors)}`);
+    try {
+        const resp = await fetch(endpoint, {
+            headers: {
+                'content-length': `${size}`,
+                'content-type': mime,
+                authorization: `token ${config.github_token}`
+            },
+            method: 'POST',
+            body
+        });
+        try {
+            const json = await resp.json();
+            if (resp.status !== 201) {
+                throw new Error(`Failed to upload release asset ${name}. received status code ${resp.status}\n${json.message}\n${JSON.stringify(json.errors)}`);
+            }
+            return json;
+        }
+        catch (jsonError) {
+            if (config.input_fail_on_asset_upload_issue) {
+                throw jsonError;
+            }
+            else {
+                core.error(`Failed to parse server response for asset ${name}. Received error ${jsonError}`);
+            }
+        }
     }
-    return json;
+    catch (error) {
+        if (config.input_fail_on_asset_upload_issue) {
+            throw error;
+        }
+        else {
+            core.error(`Failed to upload the asset ${name}. Received error ${error}`);
+        }
+    }
+    return {};
 };
 exports.upload = upload;
 const release = async (config, releaser, maxRetries = 3) => {
@@ -261,7 +282,12 @@ async function run() {
         if (config.input_files && config.input_files?.length > 0) {
             const patterns = (0, util_1.unmatchedPatterns)(config.input_files);
             for (const pattern of patterns) {
-                core.warning(`🤔 Pattern '${pattern}' does not match any files.`);
+                if (config.input_fail_on_unmatched_files) {
+                    throw new Error(`⚠️  Pattern '${pattern}' does not match any files.`);
+                }
+                else {
+                    core.warning(`🤔 Pattern '${pattern}' does not match any files.`);
+                }
             }
             if (patterns.length > 0 && config.input_fail_on_unmatched_files) {
                 throw new Error(`⚠️ There were unmatched files`);
@@ -288,7 +314,12 @@ async function run() {
         if (config.input_files && config.input_files?.length > 0) {
             const files = (0, util_1.paths)(config.input_files);
             if (files.length === 0) {
-                core.warning(`🤔 ${config.input_files} not include valid file.`);
+                if (config.input_fail_on_unmatched_files) {
+                    throw new Error(`⚠️ ${config.input_files} not include valid file.`);
+                }
+                else {
+                    core.warning(`🤔 ${config.input_files} not include valid file.`);
+                }
             }
             const currentAssets = rel.assets;
             const assets = await Promise.all(files.map(async (path) => {
@@ -378,6 +409,7 @@ const parseConfig = (env) => {
         input_draft: env.INPUT_DRAFT ? env.INPUT_DRAFT === 'true' : undefined,
         input_prerelease: env.INPUT_PRERELEASE ? env.INPUT_PRERELEASE === 'true' : undefined,
         input_fail_on_unmatched_files: env.INPUT_FAIL_ON_UNMATCHED_FILES === 'true',
+        input_fail_on_asset_upload_issue: env.INPUT_FAIL_ON_ASSET_UPLOAD_ISSUE === 'true',
         input_target_commitish: env.INPUT_TARGET_COMMITISH || undefined,
         input_discussion_category_name: env.INPUT_DISCUSSION_CATEGORY_NAME || undefined,
         input_generate_release_notes: env.INPUT_GENERATE_RELEASE_NOTES === 'true',
