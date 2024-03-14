@@ -45,7 +45,8 @@ describe('util', () => {
           input_tag_name: undefined,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         })
       )
     })
@@ -65,7 +66,8 @@ describe('util', () => {
           input_tag_name: undefined,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         })
       )
     })
@@ -85,7 +87,8 @@ describe('util', () => {
           input_tag_name: undefined,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         })
       )
     })
@@ -119,7 +122,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         }
       )
     })
@@ -145,7 +149,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: 'affa18ef97bc9db20076945705aba8c516139abd',
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         }
       )
     })
@@ -170,7 +175,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: undefined,
           input_discussion_category_name: 'releases',
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         }
       )
     })
@@ -196,7 +202,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: true
+          input_generate_release_notes: true,
+          input_make_latest: 'true'
         }
       )
     })
@@ -225,7 +232,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         }
       )
     })
@@ -252,7 +260,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         }
       )
     })
@@ -278,7 +287,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         }
       )
     })
@@ -303,7 +313,8 @@ describe('util', () => {
           input_fail_on_asset_upload_issue: false,
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
-          input_generate_release_notes: false
+          input_generate_release_notes: false,
+          input_make_latest: 'true'
         }
       )
     })
