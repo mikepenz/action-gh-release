@@ -85,17 +85,18 @@ const upload = async (config, github, url, path, currentAssets) => {
     const endpoint = new URL(url);
     endpoint.searchParams.append('name', name);
     try {
-        const resp = await fetch(endpoint, {
+        const resp = await github.request({
+            method: 'POST',
+            url: endpoint.toString(),
             headers: {
                 'content-length': `${size}`,
                 'content-type': mime,
                 authorization: `token ${config.github_token}`
             },
-            method: 'POST',
-            body
+            data: body
         });
         try {
-            const json = await resp.json();
+            const json = resp.data;
             if (resp.status !== 201) {
                 throw new Error(`Failed to upload release asset ${name}. received status code ${resp.status}\n${json.message}\n${JSON.stringify(json.errors)}`);
             }
