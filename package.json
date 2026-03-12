@@ -4,13 +4,14 @@
   "private": true,
   "description": "GitHub Action for creating GitHub Releases",
   "main": "lib/main.js",
+  "type": "module",
   "scripts": {
-    "build": "ncc build src/main.ts --minify --target es2022",
-    "build-debug": "ncc build src/main.ts --v8-cache --source-map",
+    "build": "tsc",
+    "build-debug": "tsc && ncc build lib/main.js --v8-cache --source-map",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\" \"__tests__/**/*.ts\"",
     "format-check": "prettier --check \"src/**/*.ts\" \"__tests__/**/*.ts\"",
-    "package": "ncc build src/main.ts --source-map --license licenses.txt",
+    "package": "tsc && ncc build lib/main.js --source-map --license licenses.txt",
     "test": "vitest --run",
     "all": "npm run typecheck && npm run format && npm run package && npm test"
   },
@@ -24,11 +25,11 @@
   "author": "mikepenz",
   "license": "MIT",
   "dependencies": {
-    "@actions/core": "^2.0.2",
-    "@actions/github": "^7.0.0",
-    "@octokit/plugin-retry": "^8.0.3",
+    "@actions/core": "^3.0.0",
+    "@actions/github": "^9.0.0",
+    "@octokit/plugin-retry": "^8.1.0",
     "@octokit/plugin-throttling": "^11.0.3",
-    "glob": "^13.0.0",
+    "glob": "^13.0.6",
     "mime-types": "^3.0.2"
   },
   "devDependencies": {
@@ -36,9 +37,9 @@
     "@types/mime-types": "^3.0.1",
     "@types/node": "^20.19.30",
     "@vercel/ncc": "^0.38.4",
-    "@vitest/coverage-v8": "^3.0.0",
-    "prettier": "3.5.3",
-    "typescript": "^5.8.3",
-    "vitest": "^3.0.0"
+    "@vitest/coverage-v8": "^4.0.18",
+    "prettier": "3.8.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

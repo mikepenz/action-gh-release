@@ -1,12 +1,12 @@
 import * as core from '@actions/core'
-import {GitHub} from '@actions/github/lib/utils'
-import {alignAssetName, Config, isTag, releaseBody} from './util'
+import {getOctokit} from '@actions/github'
+import {alignAssetName, Config, isTag, releaseBody} from './util.js'
 import {statSync} from 'fs'
 import {open} from 'fs/promises'
 import {lookup} from 'mime-types'
 import {basename} from 'path'
 
-type NewGitHub = InstanceType<typeof GitHub>
+type NewGitHub = ReturnType<typeof getOctokit>
 
 export interface ReleaseAsset {
   name: string
@@ -61,7 +61,7 @@ export interface Releaser {
 
   finalizeRelease(params: {owner: string; repo: string; release_id: number}): Promise<{data: Release}>
 
-  allReleases(params: {owner: string; repo: string}): AsyncIterableIterator<{data: Release[]}>
+  allReleases(params: {owner: string; repo: string}): AsyncIterable<{data: Release[]}>
 }
 
 export class GitHubReleaser implements Releaser {
@@ -157,7 +157,7 @@ export class GitHubReleaser implements Releaser {
     })
   }
 
-  allReleases(params: {owner: string; repo: string}): AsyncIterableIterator<{data: Release[]}> {
+  allReleases(params: {owner: string; repo: string}): AsyncIterable<{data: Release[]}> {
     const updatedParams = {per_page: 100, ...params}
     return this.github.paginate.iterator(this.github.rest.repos.listReleases.endpoint.merge(updatedParams))
   }
@@ -295,7 +295,9 @@ const createNewRelease = async (
       case 422: {
         const errorData = error.response?.data
         if (errorData?.errors?.[0]?.code === 'already_exists') {
-          console.log('⚠️ Release already exists (race condition detected), retrying to find and update existing release...')
+          console.log(
+            '⚠️ Release already exists (race condition detected), retrying to find and update existing release...'
+          )
         } else {
           console.log('Skip retry - validation failed')
           throw error
@@ -324,7 +326,16 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
     const existingRelease = await findTagFromReleases(releaser, owner, repo, tag)
 
     if (existingRelease === undefined) {
-      return await createNewRelease(tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, maxRetries)
+      return await createNewRelease(
+        tag,
+        config,
+        releaser,
+        owner,
+        repo,
+        discussion_category_name,
+        generate_release_notes,
+        maxRetries
+      )
     }
 
     console.log(`Found release ${existingRelease.name} (with id=${existingRelease.id})`)
@@ -373,7 +384,16 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
       throw error
     }
 
-    return await createNewRelease(tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, maxRetries)
+    return await createNewRelease(
+      tag,
+      config,
+      releaser,
+      owner,
+      repo,
+      discussion_category_name,
+      generate_release_notes,
+      maxRetries
+    )
   }
 }
 

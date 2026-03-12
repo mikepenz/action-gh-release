@@ -1,6 +1,6 @@
 import * as core from '@actions/core'
-import {paths, parseConfig, isTag, unmatchedPatterns, uploadUrl} from './util'
-import {release, upload, finalizeRelease, GitHubReleaser} from './github'
+import {paths, parseConfig, isTag, unmatchedPatterns, uploadUrl} from './util.js'
+import {release, upload, finalizeRelease, GitHubReleaser} from './github.js'
 import {getOctokit} from '@actions/github'
 
 import {env} from 'process'

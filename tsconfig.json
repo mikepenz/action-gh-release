@@ -3,12 +3,13 @@
     "useUnknownInCatchVariables": false,
     "target": "es2022",
     "module": "NodeNext",
+    "moduleResolution": "nodenext",
     "outDir": "./lib",
     "rootDir": "./src",
     "strict": true,
     "noImplicitAny": false,
     "skipLibCheck": true,
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "node"],
     "esModuleInterop": true
   },
   "exclude": ["node_modules", "**/*.test.ts", "vitest.config.ts"]

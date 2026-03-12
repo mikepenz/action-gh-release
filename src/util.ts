@@ -1,4 +1,4 @@
-import * as glob from 'glob'
+import {globSync} from 'glob'
 import {statSync, readFileSync} from 'fs'
 import * as pathLib from 'path'
 
@@ -116,7 +116,7 @@ export const parseConfig = (env: Env): Config => {
 
 export const paths = (patterns: string[], cwd?: string): string[] => {
   return patterns.reduce((acc: string[], pattern: string): string[] => {
-    const matches = glob.sync(pattern, {cwd, dot: true, absolute: false})
+    const matches = globSync(pattern, {cwd, dot: true, absolute: false})
     const resolved = matches
       .map(p => (cwd ? pathLib.join(cwd, p) : p))
       .filter(p => {
@@ -132,7 +132,7 @@ export const paths = (patterns: string[], cwd?: string): string[] => {
 
 export const unmatchedPatterns = (patterns: string[], cwd?: string): string[] => {
   return patterns.reduce((acc: string[], pattern: string): string[] => {
-    const matches = glob.sync(pattern, {cwd, dot: true, absolute: false})
+    const matches = globSync(pattern, {cwd, dot: true, absolute: false})
     const files = matches.filter(p => {
       try {
         const full = cwd ? pathLib.join(cwd, p) : p
