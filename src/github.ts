@@ -225,6 +225,12 @@ export const upload = async (
     }
     console.log(`✅ Uploaded ${name}`)
     return json
+  } catch (error) {
+    if (config.input_fail_on_asset_upload_issue) {
+      throw error
+    }
+    core.error(`Failed to upload asset ${name}. Received error: ${error}`)
+    return null
   } finally {
     await fh.close()
   }
@@ -371,7 +377,7 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
       target_commitish,
       name,
       body,
-      draft: existingRelease.draft,
+      draft: config.input_draft !== undefined ? config.input_draft : existingRelease.draft,
       prerelease,
       discussion_category_name,
       generate_release_notes,
@@ -403,7 +409,8 @@ export const finalizeRelease = async (
   rel: Release,
   maxRetries = 3
 ): Promise<Release> => {
-  if (config.input_draft === true) {
+  // If user explicitly wants a draft, or the release is already published, nothing to do
+  if (config.input_draft === true || !rel.draft) {
     return rel
   }
 

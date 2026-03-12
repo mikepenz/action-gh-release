@@ -32031,7 +32031,7 @@ function setCommandEcho(enabled) {
  */
 function setFailed(message) {
     process.exitCode = ExitCode.Failure;
-    error(message);
+    core_error(message);
 }
 //-----------------------------------------------------------------------
 // Logging Commands
@@ -32054,7 +32054,7 @@ function core_debug(message) {
  * @param message error issue message. Errors will be converted to string via toString()
  * @param properties optional properties to add to the annotation.
  */
-function error(message, properties = {}) {
+function core_error(message, properties = {}) {
     command_issueCommand('error', utils_toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
 /**
@@ -32262,6 +32262,7 @@ const parseConfig = (env) => {
         input_preserve_order: env.INPUT_PRESERVE_ORDER ? env.INPUT_PRESERVE_ORDER === 'true' : undefined,
         input_prerelease: env.INPUT_PRERELEASE ? env.INPUT_PRERELEASE === 'true' : undefined,
         input_fail_on_unmatched_files: env.INPUT_FAIL_ON_UNMATCHED_FILES === 'true',
+        input_fail_on_asset_upload_issue: env.INPUT_FAIL_ON_ASSET_UPLOAD_ISSUE === 'true',
         input_target_commitish: env.INPUT_TARGET_COMMITISH || undefined,
         input_discussion_category_name: env.INPUT_DISCUSSION_CATEGORY_NAME || undefined,
         input_generate_release_notes: env.INPUT_GENERATE_RELEASE_NOTES === 'true',
@@ -32434,6 +32435,13 @@ const upload = async (config, github, url, path, currentAssets) => {
         console.log(`✅ Uploaded ${name}`);
         return json;
     }
+    catch (error) {
+        if (config.input_fail_on_asset_upload_issue) {
+            throw error;
+        }
+        core_error(`Failed to upload asset ${name}. Received error: ${error}`);
+        return null;
+    }
     finally {
         await fh.close();
     }
@@ -32503,7 +32511,7 @@ const createNewRelease = async (tag, config, releaser, owner, repo, discussion_c
 };
 const release = async (config, releaser, maxRetries = 3) => {
     if (maxRetries <= 0) {
-        error(`❌ Too many retries. Aborting...`);
+        core_error(`❌ Too many retries. Aborting...`);
         throw new Error('Too many retries.');
     }
     const [owner, repo] = config.github_repository.split('/');
@@ -32546,7 +32554,7 @@ const release = async (config, releaser, maxRetries = 3) => {
             target_commitish,
             name,
             body,
-            draft: existingRelease.draft,
+            draft: config.input_draft !== undefined ? config.input_draft : existingRelease.draft,
             prerelease,
             discussion_category_name,
             generate_release_notes,
@@ -32563,7 +32571,8 @@ const release = async (config, releaser, maxRetries = 3) => {
     }
 };
 const finalizeRelease = async (config, releaser, rel, maxRetries = 3) => {
-    if (config.input_draft === true) {
+    // If user explicitly wants a draft, or the release is already published, nothing to do
+    if (config.input_draft === true || !rel.draft) {
         return rel;
     }
     if (maxRetries <= 0) {
