@@ -4,3 +4,5 @@ __tests__/runner/*
 node_modules
 lib
 /.idea/*
+*.v*.ts
+*.v*.yml
