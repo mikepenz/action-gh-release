@@ -4071,6 +4071,24 @@ class SecureProxyConnectionError extends UndiciError {
   [kSecureProxyConnectionError] = true
 }
 
+const kMessageSizeExceededError = Symbol.for('undici.error.UND_ERR_WS_MESSAGE_SIZE_EXCEEDED')
+class MessageSizeExceededError extends UndiciError {
+  constructor (message) {
+    super(message)
+    this.name = 'MessageSizeExceededError'
+    this.message = message || 'Max decompressed message size exceeded'
+    this.code = 'UND_ERR_WS_MESSAGE_SIZE_EXCEEDED'
+  }
+
+  static [Symbol.hasInstance] (instance) {
+    return instance && instance[kMessageSizeExceededError] === true
+  }
+
+  get [kMessageSizeExceededError] () {
+    return true
+  }
+}
+
 module.exports = {
   AbortError,
   HTTPParserError,
@@ -4094,7 +4112,8 @@ module.exports = {
   ResponseExceededMaxSizeError,
   RequestRetryError,
   ResponseError,
-  SecureProxyConnectionError
+  SecureProxyConnectionError,
+  MessageSizeExceededError
 }
 
 
@@ -4169,6 +4188,10 @@ class Request {
 
     if (upgrade && typeof upgrade !== 'string') {
       throw new InvalidArgumentError('upgrade must be a string')
+    }
+
+    if (upgrade && !isValidHeaderValue(upgrade)) {
+      throw new InvalidArgumentError('invalid upgrade header')
     }
 
     if (headersTimeout != null && (!Number.isFinite(headersTimeout) || headersTimeout < 0)) {
@@ -4465,13 +4488,19 @@ function processHeader (request, key, val) {
     val = `${val}`
   }
 
-  if (request.host === null && headerName === 'host') {
+  if (headerName === 'host') {
+    if (request.host !== null) {
+      throw new InvalidArgumentError('duplicate host header')
+    }
     if (typeof val !== 'string') {
       throw new InvalidArgumentError('invalid host header')
     }
     // Consumed by Client
     request.host = val
-  } else if (request.contentLength === null && headerName === 'content-length') {
+  } else if (headerName === 'content-length') {
+    if (request.contentLength !== null) {
+      throw new InvalidArgumentError('duplicate content-length header')
+    }
     request.contentLength = parseInt(val, 10)
     if (!Number.isFinite(request.contentLength)) {
       throw new InvalidArgumentError('invalid content-length header')
@@ -5490,7 +5519,6 @@ function defaultFactory (origin, opts) {
 
 class Agent extends DispatcherBase {
   constructor ({ factory = defaultFactory, maxRedirections = 0, connect, ...options } = {}) {
-    super()
 
     if (typeof factory !== 'function') {
       throw new InvalidArgumentError('factory must be a function.')
@@ -5503,6 +5531,8 @@ class Agent extends DispatcherBase {
     if (!Number.isInteger(maxRedirections) || maxRedirections < 0) {
       throw new InvalidArgumentError('maxRedirections must be a positive number')
     }
+
+    super(options)
 
     if (connect && typeof connect !== 'function') {
       connect = { ...connect }
@@ -8052,9 +8082,10 @@ class Client extends DispatcherBase {
     autoSelectFamilyAttemptTimeout,
     // h2
     maxConcurrentStreams,
-    allowH2
+    allowH2,
+    webSocket
   } = {}) {
-    super()
+    super({ webSocket })
 
     if (keepAlive !== undefined) {
       throw new InvalidArgumentError('unsupported keepAlive, use pipelining=0 instead')
@@ -8586,15 +8617,23 @@ const { kDestroy, kClose, kClosed, kDestroyed, kDispatch, kInterceptors } = __nc
 const kOnDestroyed = Symbol('onDestroyed')
 const kOnClosed = Symbol('onClosed')
 const kInterceptedDispatch = Symbol('Intercepted Dispatch')
+const kWebSocketOptions = Symbol('webSocketOptions')
 
 class DispatcherBase extends Dispatcher {
-  constructor () {
+  constructor (opts) {
     super()
 
     this[kDestroyed] = false
     this[kOnDestroyed] = null
     this[kClosed] = false
     this[kOnClosed] = []
+    this[kWebSocketOptions] = opts?.webSocket ?? {}
+  }
+
+  get webSocketOptions () {
+    return {
+      maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024
+    }
   }
 
   get destroyed () {
@@ -9154,8 +9193,8 @@ const kRemoveClient = Symbol('remove client')
 const kStats = Symbol('stats')
 
 class PoolBase extends DispatcherBase {
-  constructor () {
-    super()
+  constructor (opts) {
+    super(opts)
 
     this[kQueue] = new FixedQueue()
     this[kClients] = []
@@ -9414,8 +9453,6 @@ class Pool extends PoolBase {
     allowH2,
     ...options
   } = {}) {
-    super()
-
     if (connections != null && (!Number.isFinite(connections) || connections < 0)) {
       throw new InvalidArgumentError('invalid connections')
     }
@@ -9439,6 +9476,8 @@ class Pool extends PoolBase {
         ...connect
       })
     }
+
+    super(options)
 
     this[kInterceptors] = options.interceptors?.Pool && Array.isArray(options.interceptors.Pool)
       ? options.interceptors.Pool
@@ -27188,6 +27227,7 @@ module.exports = {
 
 const { createInflateRaw, Z_DEFAULT_WINDOWBITS } = __nccwpck_require__(8522)
 const { isValidClientWindowBits } = __nccwpck_require__(8625)
+const { MessageSizeExceededError } = __nccwpck_require__(8707)
 
 const tail = Buffer.from([0x00, 0x00, 0xff, 0xff])
 const kBuffer = Symbol('kBuffer')
@@ -27199,17 +27239,29 @@ class PerMessageDeflate {
 
   #options = {}
 
-  constructor (extensions) {
+  #maxPayloadSize = 0
+
+  /**
+   * @param {Map<string, string>} extensions
+   */
+  constructor (extensions, options) {
     this.#options.serverNoContextTakeover = extensions.has('server_no_context_takeover')
     this.#options.serverMaxWindowBits = extensions.get('server_max_window_bits')
+
+    this.#maxPayloadSize = options.maxPayloadSize
   }
 
+  /**
+   * Decompress a compressed payload.
+   * @param {Buffer} chunk Compressed data
+   * @param {boolean} fin Final fragment flag
+   * @param {Function} callback Callback function
+   */
   decompress (chunk, fin, callback) {
     // An endpoint uses the following algorithm to decompress a message.
     // 1.  Append 4 octets of 0x00 0x00 0xff 0xff to the tail end of the
     //     payload of the message.
     // 2.  Decompress the resulting data using DEFLATE.
-
     if (!this.#inflate) {
       let windowBits = Z_DEFAULT_WINDOWBITS
 
@@ -27222,13 +27274,26 @@ class PerMessageDeflate {
         windowBits = Number.parseInt(this.#options.serverMaxWindowBits)
       }
 
-      this.#inflate = createInflateRaw({ windowBits })
+      try {
+        this.#inflate = createInflateRaw({ windowBits })
+      } catch (err) {
+        callback(err)
+        return
+      }
       this.#inflate[kBuffer] = []
       this.#inflate[kLength] = 0
 
       this.#inflate.on('data', (data) => {
-        this.#inflate[kBuffer].push(data)
         this.#inflate[kLength] += data.length
+
+        if (this.#maxPayloadSize > 0 && this.#inflate[kLength] > this.#maxPayloadSize) {
+          callback(new MessageSizeExceededError())
+          this.#inflate.removeAllListeners()
+          this.#inflate = null
+          return
+        }
+
+        this.#inflate[kBuffer].push(data)
       })
 
       this.#inflate.on('error', (err) => {
@@ -27243,6 +27308,10 @@ class PerMessageDeflate {
     }
 
     this.#inflate.flush(() => {
+      if (!this.#inflate) {
+        return
+      }
+
       const full = Buffer.concat(this.#inflate[kBuffer], this.#inflate[kLength])
 
       this.#inflate[kBuffer].length = 0
@@ -27281,6 +27350,7 @@ const {
 const { WebsocketFrameSend } = __nccwpck_require__(3264)
 const { closeWebSocketConnection } = __nccwpck_require__(6897)
 const { PerMessageDeflate } = __nccwpck_require__(9469)
+const { MessageSizeExceededError } = __nccwpck_require__(8707)
 
 // This code was influenced by ws released under the MIT license.
 // Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
@@ -27289,6 +27359,7 @@ const { PerMessageDeflate } = __nccwpck_require__(9469)
 
 class ByteParser extends Writable {
   #buffers = []
+  #fragmentsBytes = 0
   #byteOffset = 0
   #loop = false
 
@@ -27300,14 +27371,23 @@ class ByteParser extends Writable {
   /** @type {Map<string, PerMessageDeflate>} */
   #extensions
 
-  constructor (ws, extensions) {
+  /** @type {number} */
+  #maxPayloadSize
+
+  /**
+   * @param {import('./websocket').WebSocket} ws
+   * @param {Map<string, string>|null} extensions
+   * @param {{ maxPayloadSize?: number }} [options]
+   */
+  constructor (ws, extensions, options = {}) {
     super()
 
     this.ws = ws
     this.#extensions = extensions == null ? new Map() : extensions
+    this.#maxPayloadSize = options.maxPayloadSize ?? 0
 
     if (this.#extensions.has('permessage-deflate')) {
-      this.#extensions.set('permessage-deflate', new PerMessageDeflate(extensions))
+      this.#extensions.set('permessage-deflate', new PerMessageDeflate(extensions, options))
     }
   }
 
@@ -27321,6 +27401,19 @@ class ByteParser extends Writable {
     this.#loop = true
 
     this.run(callback)
+  }
+
+  #validatePayloadLength () {
+    if (
+      this.#maxPayloadSize > 0 &&
+      !isControlFrame(this.#info.opcode) &&
+      this.#info.payloadLength > this.#maxPayloadSize
+    ) {
+      failWebsocketConnection(this.ws, 'Payload size exceeds maximum allowed size')
+      return false
+    }
+
+    return true
   }
 
   /**
@@ -27411,6 +27504,10 @@ class ByteParser extends Writable {
         if (payloadLength <= 125) {
           this.#info.payloadLength = payloadLength
           this.#state = parserStates.READ_DATA
+
+          if (!this.#validatePayloadLength()) {
+            return
+          }
         } else if (payloadLength === 126) {
           this.#state = parserStates.PAYLOADLENGTH_16
         } else if (payloadLength === 127) {
@@ -27435,6 +27532,10 @@ class ByteParser extends Writable {
 
         this.#info.payloadLength = buffer.readUInt16BE(0)
         this.#state = parserStates.READ_DATA
+
+        if (!this.#validatePayloadLength()) {
+          return
+        }
       } else if (this.#state === parserStates.PAYLOADLENGTH_64) {
         if (this.#byteOffset < 8) {
           return callback()
@@ -27442,6 +27543,7 @@ class ByteParser extends Writable {
 
         const buffer = this.consume(8)
         const upper = buffer.readUInt32BE(0)
+        const lower = buffer.readUInt32BE(4)
 
         // 2^31 is the maximum bytes an arraybuffer can contain
         // on 32-bit systems. Although, on 64-bit systems, this is
@@ -27449,15 +27551,17 @@ class ByteParser extends Writable {
         // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Errors/Invalid_array_length
         // https://source.chromium.org/chromium/chromium/src/+/main:v8/src/common/globals.h;drc=1946212ac0100668f14eb9e2843bdd846e510a1e;bpv=1;bpt=1;l=1275
         // https://source.chromium.org/chromium/chromium/src/+/main:v8/src/objects/js-array-buffer.h;l=34;drc=1946212ac0100668f14eb9e2843bdd846e510a1e
-        if (upper > 2 ** 31 - 1) {
+        if (upper !== 0 || lower > 2 ** 31 - 1) {
           failWebsocketConnection(this.ws, 'Received payload length > 2^31 bytes.')
           return
         }
 
-        const lower = buffer.readUInt32BE(4)
-
-        this.#info.payloadLength = (upper << 8) + lower
+        this.#info.payloadLength = lower
         this.#state = parserStates.READ_DATA
+
+        if (!this.#validatePayloadLength()) {
+          return
+        }
       } else if (this.#state === parserStates.READ_DATA) {
         if (this.#byteOffset < this.#info.payloadLength) {
           return callback()
@@ -27470,42 +27574,53 @@ class ByteParser extends Writable {
           this.#state = parserStates.INFO
         } else {
           if (!this.#info.compressed) {
-            this.#fragments.push(body)
+            this.writeFragments(body)
+
+            if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
+              failWebsocketConnection(this.ws, new MessageSizeExceededError().message)
+              return
+            }
 
             // If the frame is not fragmented, a message has been received.
             // If the frame is fragmented, it will terminate with a fin bit set
             // and an opcode of 0 (continuation), therefore we handle that when
             // parsing continuation frames, not here.
             if (!this.#info.fragmented && this.#info.fin) {
-              const fullMessage = Buffer.concat(this.#fragments)
-              websocketMessageReceived(this.ws, this.#info.binaryType, fullMessage)
-              this.#fragments.length = 0
+              websocketMessageReceived(this.ws, this.#info.binaryType, this.consumeFragments())
             }
 
             this.#state = parserStates.INFO
           } else {
-            this.#extensions.get('permessage-deflate').decompress(body, this.#info.fin, (error, data) => {
-              if (error) {
-                closeWebSocketConnection(this.ws, 1007, error.message, error.message.length)
-                return
-              }
+            this.#extensions.get('permessage-deflate').decompress(
+              body,
+              this.#info.fin,
+              (error, data) => {
+                if (error) {
+                  failWebsocketConnection(this.ws, error.message)
+                  return
+                }
 
-              this.#fragments.push(data)
+                this.writeFragments(data)
 
-              if (!this.#info.fin) {
-                this.#state = parserStates.INFO
+                if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
+                  failWebsocketConnection(this.ws, new MessageSizeExceededError().message)
+                  return
+                }
+
+                if (!this.#info.fin) {
+                  this.#state = parserStates.INFO
+                  this.#loop = true
+                  this.run(callback)
+                  return
+                }
+
+                websocketMessageReceived(this.ws, this.#info.binaryType, this.consumeFragments())
+
                 this.#loop = true
+                this.#state = parserStates.INFO
                 this.run(callback)
-                return
               }
-
-              websocketMessageReceived(this.ws, this.#info.binaryType, Buffer.concat(this.#fragments))
-
-              this.#loop = true
-              this.#state = parserStates.INFO
-              this.#fragments.length = 0
-              this.run(callback)
-            })
+            )
 
             this.#loop = false
             break
@@ -27555,6 +27670,26 @@ class ByteParser extends Writable {
     this.#byteOffset -= n
 
     return buffer
+  }
+
+  writeFragments (fragment) {
+    this.#fragmentsBytes += fragment.length
+    this.#fragments.push(fragment)
+  }
+
+  consumeFragments () {
+    const fragments = this.#fragments
+
+    if (fragments.length === 1) {
+      this.#fragmentsBytes = 0
+      return fragments.shift()
+    }
+
+    const output = Buffer.concat(fragments, this.#fragmentsBytes)
+    this.#fragments = []
+    this.#fragmentsBytes = 0
+
+    return output
   }
 
   parseCloseBody (data) {
@@ -28090,6 +28225,12 @@ function parseExtensions (extensions) {
  * @param {string} value
  */
 function isValidClientWindowBits (value) {
+  // Must have at least one character
+  if (value.length === 0) {
+    return false
+  }
+
+  // Check all characters are ASCII digits
   for (let i = 0; i < value.length; i++) {
     const byte = value.charCodeAt(i)
 
@@ -28098,7 +28239,9 @@ function isValidClientWindowBits (value) {
     }
   }
 
-  return true
+  // Check numeric range: zlib requires windowBits in range 8-15
+  const num = Number.parseInt(value, 10)
+  return num >= 8 && num <= 15
 }
 
 // https://nodejs.org/api/intl.html#detecting-internationalization-support
@@ -28576,11 +28719,15 @@ class WebSocket extends EventTarget {
    * @see https://websockets.spec.whatwg.org/#feedback-from-the-protocol
    */
   #onConnectionEstablished (response, parsedExtensions) {
-    // processResponse is called when the "response’s header list has been received and initialized."
+    // processResponse is called when the "response's header list has been received and initialized."
     // once this happens, the connection is open
     this[kResponse] = response
 
-    const parser = new ByteParser(this, parsedExtensions)
+    const maxPayloadSize = this[kController]?.dispatcher?.webSocketOptions?.maxPayloadSize
+
+    const parser = new ByteParser(this, parsedExtensions, {
+      maxPayloadSize
+    })
     parser.on('drain', onParserDrain)
     parser.on('error', onParserError.bind(this))
 
@@ -32190,6 +32337,8 @@ globstar while`,t,d,e,f,m),this.matchOne(t.slice(d),e.slice(f),s))return this.de
 
 
 
+
+const DEFAULT_UPLOAD_CONCURRENCY = 4;
 const uploadUrl = (url) => {
     const templateMarkerPos = url.indexOf('{');
     if (templateMarkerPos > -1) {
@@ -32246,13 +32395,35 @@ const parseMakeLatest = (value) => {
     }
     return undefined;
 };
+const parseToken = (env) => {
+    const inputToken = env.INPUT_TOKEN?.trim();
+    if (inputToken) {
+        return inputToken;
+    }
+    return env.GITHUB_TOKEN?.trim() || '';
+};
+const parseConcurrency = (raw) => {
+    if (!raw) {
+        return DEFAULT_UPLOAD_CONCURRENCY;
+    }
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+        return DEFAULT_UPLOAD_CONCURRENCY;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+        console.warn(`⚠️ Invalid concurrency "${raw}", falling back to default (${DEFAULT_UPLOAD_CONCURRENCY}).`);
+        return DEFAULT_UPLOAD_CONCURRENCY;
+    }
+    return Math.floor(parsed);
+};
 const parseConfig = (env) => {
     return {
-        github_token: env.GITHUB_TOKEN || env.INPUT_TOKEN || '',
+        github_token: parseToken(env),
         github_ref: env.GITHUB_REF || '',
         github_repository: env.INPUT_REPOSITORY || env.GITHUB_REPOSITORY || '',
         input_name: env.INPUT_NAME,
-        input_tag_name: env.INPUT_TAG_NAME?.trim(),
+        input_tag_name: normalizeTagName(env.INPUT_TAG_NAME?.trim()),
         input_body: env.INPUT_BODY,
         input_body_path: env.INPUT_BODY_PATH,
         input_files: parseInputFiles(env.INPUT_FILES || ''),
@@ -32266,15 +32437,35 @@ const parseConfig = (env) => {
         input_target_commitish: env.INPUT_TARGET_COMMITISH || undefined,
         input_discussion_category_name: env.INPUT_DISCUSSION_CATEGORY_NAME || undefined,
         input_generate_release_notes: env.INPUT_GENERATE_RELEASE_NOTES === 'true',
+        input_previous_tag: env.INPUT_PREVIOUS_TAG?.trim() || undefined,
         input_append_body: env.INPUT_APPEND_BODY === 'true',
-        input_make_latest: parseMakeLatest(env.INPUT_MAKE_LATEST)
+        input_make_latest: parseMakeLatest(env.INPUT_MAKE_LATEST),
+        input_concurrency: parseConcurrency(env.INPUT_CONCURRENCY)
     };
+};
+const normalizeGlobPattern = (pattern, platform = process.platform) => {
+    if (platform === 'win32') {
+        return pattern.replace(/\\/g, '/');
+    }
+    return pattern;
+};
+const expandHomePattern = (pattern, homeDirectory = (0,external_os_namespaceObject.homedir)()) => {
+    if (pattern === '~') {
+        return homeDirectory;
+    }
+    if (pattern.startsWith('~/') || pattern.startsWith('~\\')) {
+        return external_path_.join(homeDirectory, pattern.slice(2));
+    }
+    return pattern;
+};
+const normalizeFilePattern = (pattern, platform = process.platform, homeDirectory = (0,external_os_namespaceObject.homedir)()) => {
+    return normalizeGlobPattern(expandHomePattern(pattern, homeDirectory), platform);
 };
 const paths = (patterns, cwd) => {
     return patterns.reduce((acc, pattern) => {
-        const matches = ts(pattern, { cwd, dot: true, absolute: false });
+        const matches = ts(normalizeFilePattern(pattern), { cwd, dot: true, absolute: false });
         const resolved = matches
-            .map(p => (cwd ? external_path_.join(cwd, p) : p))
+            .map(p => (cwd && !external_path_.isAbsolute(p) ? external_path_.join(cwd, p) : p))
             .filter(p => {
             try {
                 return (0,external_fs_namespaceObject.statSync)(p).isFile();
@@ -32288,10 +32479,10 @@ const paths = (patterns, cwd) => {
 };
 const unmatchedPatterns = (patterns, cwd) => {
     return patterns.reduce((acc, pattern) => {
-        const matches = ts(pattern, { cwd, dot: true, absolute: false });
+        const matches = ts(normalizeFilePattern(pattern), { cwd, dot: true, absolute: false });
         const files = matches.filter(p => {
             try {
-                const full = cwd ? external_path_.join(cwd, p) : p;
+                const full = cwd && !external_path_.isAbsolute(p) ? external_path_.join(cwd, p) : p;
                 return (0,external_fs_namespaceObject.statSync)(full).isFile();
             }
             catch {
@@ -32303,6 +32494,12 @@ const unmatchedPatterns = (patterns, cwd) => {
 };
 const isTag = (ref) => {
     return ref.startsWith('refs/tags/');
+};
+const normalizeTagName = (tag) => {
+    if (!tag) {
+        return tag;
+    }
+    return isTag(tag) ? tag.replace('refs/tags/', '') : tag;
 };
 const alignAssetName = (assetName) => {
     return assetName.replace(/ /g, '.');
@@ -32340,7 +32537,13 @@ class GitHubReleaser {
             params.make_latest = undefined;
         }
         if (params.generate_release_notes) {
-            const releaseNotes = await this.getReleaseNotes(params);
+            const releaseNotes = await this.getReleaseNotes({
+                owner: params.owner,
+                repo: params.repo,
+                tag_name: params.tag_name,
+                target_commitish: params.target_commitish,
+                previous_tag_name: params.previous_tag_name
+            });
             params.generate_release_notes = false;
             if (params.body) {
                 params.body = `${params.body}\n\n${releaseNotes.data.body}`;
@@ -32350,14 +32553,21 @@ class GitHubReleaser {
             }
         }
         params.body = params.body ? this.truncateReleaseNotes(params.body) : undefined;
-        return this.github.rest.repos.createRelease(params);
+        const { previous_tag_name, ...createParams } = params;
+        return this.github.rest.repos.createRelease(createParams);
     }
     async updateRelease(params) {
         if (typeof params.make_latest === 'string' && !['true', 'false', 'legacy'].includes(params.make_latest)) {
             params.make_latest = undefined;
         }
         if (params.generate_release_notes) {
-            const releaseNotes = await this.getReleaseNotes(params);
+            const releaseNotes = await this.getReleaseNotes({
+                owner: params.owner,
+                repo: params.repo,
+                tag_name: params.tag_name,
+                target_commitish: params.target_commitish,
+                previous_tag_name: params.previous_tag_name
+            });
             params.generate_release_notes = false;
             if (params.body) {
                 params.body = `${params.body}\n\n${releaseNotes.data.body}`;
@@ -32367,7 +32577,8 @@ class GitHubReleaser {
             }
         }
         params.body = params.body ? this.truncateReleaseNotes(params.body) : undefined;
-        return this.github.rest.repos.updateRelease(params);
+        const { previous_tag_name, ...updateParams } = params;
+        return this.github.rest.repos.updateRelease(updateParams);
     }
     async finalizeRelease(params) {
         return await this.github.rest.repos.updateRelease({
@@ -32396,39 +32607,57 @@ const mimeOrDefault = (path) => {
 const upload = async (config, github, url, path, currentAssets) => {
     const [owner, repo] = config.github_repository.split('/');
     const { name, mime, size } = asset(path);
-    const currentAsset = currentAssets.find(
-    // GitHub renames asset filenames with special characters; compare against the renamed version
-    ({ name: currentName }) => currentName === alignAssetName(name));
-    if (currentAsset) {
+    // Extract the release id from the upload URL so we can refresh asset
+    // listings when a concurrent workflow has changed them out from under us.
+    const releaseIdMatch = url.match(/\/releases\/(\d+)\/assets/);
+    const releaseId = releaseIdMatch ? Number(releaseIdMatch[1]) : undefined;
+    const matchesName = (a) => a.name === name || a.name === alignAssetName(name);
+    const deleteIfPresent = async (asset_id) => {
+        try {
+            await github.rest.repos.deleteReleaseAsset({ asset_id, owner, repo });
+        }
+        catch (err) {
+            // 404 means another workflow already deleted it — safe to ignore.
+            if (err?.status !== 404) {
+                throw err;
+            }
+        }
+    };
+    const existing = currentAssets.find(matchesName);
+    if (existing) {
         if (config.input_overwrite_files === false) {
             console.log(`Asset ${name} already exists and overwrite_files is false...`);
             return null;
         }
         else {
             console.log(`♻️ Deleting previously uploaded asset ${name}...`);
-            await github.rest.repos.deleteReleaseAsset({
-                asset_id: currentAsset.id || 1,
-                owner,
-                repo
-            });
+            await deleteIfPresent(existing.id || 1);
         }
     }
     console.log(`⬆️ Uploading ${name}...`);
     const endpoint = new URL(url);
     endpoint.searchParams.append('name', name);
-    const fh = await (0,external_fs_promises_namespaceObject.open)(path);
+    const doUpload = async () => {
+        const fh = await (0,external_fs_promises_namespaceObject.open)(path);
+        try {
+            return await github.request({
+                method: 'POST',
+                url: endpoint.toString(),
+                headers: {
+                    'content-length': `${size}`,
+                    'content-type': mime,
+                    authorization: `token ${config.github_token}`
+                },
+                data: fh.readableWebStream({ type: 'bytes' })
+            });
+        }
+        finally {
+            await fh.close();
+        }
+    };
     try {
-        const resp = await github.request({
-            method: 'POST',
-            url: endpoint.toString(),
-            headers: {
-                'content-length': `${size}`,
-                'content-type': mime,
-                authorization: `token ${config.github_token}`
-            },
-            data: fh.readableWebStream({ type: 'bytes' })
-        });
-        const json = resp.data;
+        let resp = await doUpload();
+        let json = resp.data;
         if (resp.status !== 201) {
             throw new Error(`Failed to upload release asset ${name}. received status code ${resp.status}\n${json.message}\n${JSON.stringify(json.errors)}`);
         }
@@ -32436,14 +32665,42 @@ const upload = async (config, github, url, path, currentAssets) => {
         return json;
     }
     catch (error) {
+        const status = error?.status ?? error?.response?.status;
+        const errorData = error?.response?.data;
+        // Race condition recovery: another workflow uploaded the same asset
+        // between our delete and our upload (or no prior asset existed and one
+        // appeared concurrently). Refresh the asset list, delete, retry once.
+        if (config.input_overwrite_files !== false &&
+            status === 422 &&
+            errorData?.errors?.[0]?.code === 'already_exists' &&
+            releaseId !== undefined) {
+            console.log(`⚠️ Asset ${name} already exists (race condition); refreshing assets and retrying once...`);
+            try {
+                const latest = await github.paginate(github.rest.repos.listReleaseAssets, {
+                    owner,
+                    repo,
+                    release_id: releaseId,
+                    per_page: 100
+                });
+                const collision = latest.find(matchesName);
+                if (collision) {
+                    await deleteIfPresent(collision.id);
+                    const resp = await doUpload();
+                    if (resp.status === 201) {
+                        console.log(`✅ Uploaded ${name}`);
+                        return resp.data;
+                    }
+                }
+            }
+            catch (refreshError) {
+                console.warn(`Race-condition recovery failed for ${name}: ${refreshError}`);
+            }
+        }
         if (config.input_fail_on_asset_upload_issue) {
             throw error;
         }
         core_error(`Failed to upload asset ${name}. Received error: ${error}`);
         return null;
-    }
-    finally {
-        await fh.close();
     }
 };
 const findTagFromReleases = async (releaser, owner, repo, tag) => {
@@ -32455,7 +32712,7 @@ const findTagFromReleases = async (releaser, owner, repo, tag) => {
     }
     return undefined;
 };
-const createNewRelease = async (tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, maxRetries) => {
+const createNewRelease = async (tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, previous_tag_name, maxRetries) => {
     const tag_name = tag;
     const name = config.input_name || tag;
     const body = releaseBody(config);
@@ -32479,7 +32736,8 @@ const createNewRelease = async (tag, config, releaser, owner, repo, discussion_c
             target_commitish,
             discussion_category_name,
             generate_release_notes,
-            make_latest
+            make_latest,
+            previous_tag_name
         });
         return rel.data;
     }
@@ -32509,19 +32767,48 @@ const createNewRelease = async (tag, config, releaser, owner, repo, discussion_c
         return release(config, releaser, maxRetries - 1);
     }
 };
+// Eagerly look up a release by its tag using the dedicated GitHub API endpoint.
+// Falls back to undefined on 404 so the caller can create a new release.
+const getReleaseByTagOrUndefined = async (releaser, owner, repo, tag) => {
+    try {
+        const { data } = await releaser.getReleaseByTag({ owner, repo, tag });
+        return data;
+    }
+    catch (error) {
+        if (error?.status === 404) {
+            return undefined;
+        }
+        // For drafts (which have no tag yet), getReleaseByTag may not find them.
+        // Fall back to the legacy pagination-based lookup so existing drafts
+        // matching the tag name are still found.
+        try {
+            return await findTagFromReleases(releaser, owner, repo, tag);
+        }
+        catch {
+            throw error;
+        }
+    }
+};
 const release = async (config, releaser, maxRetries = 3) => {
     if (maxRetries <= 0) {
         core_error(`❌ Too many retries. Aborting...`);
         throw new Error('Too many retries.');
     }
     const [owner, repo] = config.github_repository.split('/');
-    const tag = config.input_tag_name || (isTag(config.github_ref) ? config.github_ref.replace('refs/tags/', '') : '');
+    const tag = normalizeTagName(config.input_tag_name) ||
+        (isTag(config.github_ref) ? config.github_ref.replace('refs/tags/', '') : '');
     const discussion_category_name = config.input_discussion_category_name;
     const generate_release_notes = config.input_generate_release_notes;
+    const previous_tag_name = config.input_previous_tag;
+    if (generate_release_notes && previous_tag_name) {
+        console.log(`📝 Generating release notes using previous tag ${previous_tag_name}`);
+    }
     try {
-        const existingRelease = await findTagFromReleases(releaser, owner, repo, tag);
+        // Fast path: direct getReleaseByTag instead of paginating all releases.
+        // Falls back to pagination internally for draft-without-tag scenarios.
+        const existingRelease = await getReleaseByTagOrUndefined(releaser, owner, repo, tag);
         if (existingRelease === undefined) {
-            return await createNewRelease(tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, maxRetries);
+            return await createNewRelease(tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, previous_tag_name, maxRetries);
         }
         console.log(`Found release ${existingRelease.name} (with id=${existingRelease.id})`);
         const release_id = existingRelease.id;
@@ -32558,7 +32845,8 @@ const release = async (config, releaser, maxRetries = 3) => {
             prerelease,
             discussion_category_name,
             generate_release_notes,
-            make_latest
+            make_latest,
+            previous_tag_name
         });
         return rel.data;
     }
@@ -32567,7 +32855,7 @@ const release = async (config, releaser, maxRetries = 3) => {
             console.log(`⚠️ Unexpected error fetching GitHub release for tag ${config.github_ref}: ${error}`);
             throw error;
         }
-        return await createNewRelease(tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, maxRetries);
+        return await createNewRelease(tag, config, releaser, owner, repo, discussion_category_name, generate_release_notes, previous_tag_name, maxRetries);
     }
 };
 const finalizeRelease = async (config, releaser, rel, maxRetries = 3) => {
@@ -32688,6 +32976,19 @@ function getProxyFetch(destinationUrl) {
 }
 function getApiBaseUrl() {
     return process.env['GITHUB_API_URL'] || 'https://api.github.com';
+}
+function getUserAgentWithOrchestrationId(baseUserAgent) {
+    var _a;
+    const orchId = (_a = process.env['ACTIONS_ORCHESTRATION_ID']) === null || _a === void 0 ? void 0 : _a.trim();
+    if (orchId) {
+        const sanitizedId = orchId.replace(/[^a-z0-9_.-]/gi, '_');
+        const tag = `actions_orchestration_id/${sanitizedId}`;
+        if (baseUserAgent === null || baseUserAgent === void 0 ? void 0 : baseUserAgent.includes(tag))
+            return baseUserAgent;
+        const ua = baseUserAgent ? `${baseUserAgent} ` : '';
+        return `${ua}${tag}`;
+    }
+    return baseUserAgent;
 }
 //# sourceMappingURL=utils.js.map
 ;// CONCATENATED MODULE: ./node_modules/universal-user-agent/index.js
@@ -33209,14 +33510,26 @@ const bigIntsStringify = /([\[:])?"(-?\d+)n"($|([\\n]|\s)*(\s|[\\n])*[,\}\]])/g;
 const noiseStringify =
   /([\[:])?("-?\d+n+)n("$|"([\\n]|\s)*(\s|[\\n])*[,\}\]])/g;
 
-/** @typedef {(key: string, value: any, context?: { source: string }) => any} Reviver */
+/**
+ * @typedef {(this: any, key: string | number | undefined, value: any) => any} Replacer
+ * @typedef {(key: string | number | undefined, value: any, context?: { source: string }) => any} Reviver
+ */
 
 /**
- * Function to serialize value to a JSON string.
- * Converts BigInt values to a custom format (strings with digits and "n" at the end) and then converts them to proper big integers in a JSON string.
- * @param {*} value - The value to convert to a JSON string.
- * @param {(Function|Array<string>|null)} [replacer] - A function that alters the behavior of the stringification process, or an array of strings to indicate properties to exclude.
- * @param {(string|number)} [space] - A string or number to specify indentation or pretty-printing.
+ * Converts a JavaScript value to a JSON string.
+ *
+ * Supports serialization of BigInt values using two strategies:
+ * 1. Custom format "123n" → "123" (universal fallback)
+ * 2. Native JSON.rawJSON() (Node.js 22+, fastest) when available
+ *
+ * All other values are serialized exactly like native JSON.stringify().
+ *
+ * @param {*} value The value to convert to a JSON string.
+ * @param {Replacer | Array<string | number> | null} [replacer]
+ *   A function that alters the behavior of the stringification process,
+ *   or an array of strings/numbers to indicate properties to exclude.
+ * @param {string | number} [space]
+ *   A string or number to specify indentation or pretty-printing.
  * @returns {string} The JSON string representation.
  */
 const JSONStringify = (value, replacer, space) => {
@@ -33241,8 +33554,7 @@ const JSONStringify = (value, replacer, space) => {
   const convertedToCustomJSON = originalStringify(
     value,
     (key, value) => {
-      const isNoise =
-        typeof value === "string" && Boolean(value.match(noiseValue));
+      const isNoise = typeof value === "string" && noiseValue.test(value);
 
       if (isNoise) return value.toString() + "n"; // Mark noise values with additional "n" to offset the deletion of one "n" during the processing
 
@@ -33265,33 +33577,71 @@ const JSONStringify = (value, replacer, space) => {
   return denoisedJSON;
 };
 
-/**
- * Support for JSON.parse's context.source feature detection.
- * @type {boolean}
- */
-const isContextSourceSupported = () =>
-  JSON.parse("1", (_, __, context) => !!context && context.source === "1");
+const featureCache = new Map();
 
 /**
- * Convert marked big numbers to BigInt
- * @type {Reviver}
+ * Detects if the current JSON.parse implementation supports the context.source feature.
+ *
+ * Uses toString() fingerprinting to cache results and automatically detect runtime
+ * replacements of JSON.parse (polyfills, mocks, etc.).
+ *
+ * @returns {boolean} true if context.source is supported, false otherwise.
+ */
+const isContextSourceSupported = () => {
+  const parseFingerprint = JSON.parse.toString();
+
+  if (featureCache.has(parseFingerprint)) {
+    return featureCache.get(parseFingerprint);
+  }
+
+  try {
+    const result = JSON.parse(
+      "1",
+      (_, __, context) => !!context?.source && context.source === "1",
+    );
+    featureCache.set(parseFingerprint, result);
+
+    return result;
+  } catch {
+    featureCache.set(parseFingerprint, false);
+
+    return false;
+  }
+};
+
+/**
+ * Reviver function that converts custom-format BigInt strings back to BigInt values.
+ * Also handles "noise" strings that accidentally match the BigInt format.
+ *
+ * @param {string | number | undefined} key The object key.
+ * @param {*} value The value being parsed.
+ * @param {object} [context] Parse context (if supported by JSON.parse).
+ * @param {Reviver} [userReviver] User's custom reviver function.
+ * @returns {any} The transformed value.
  */
 const convertMarkedBigIntsReviver = (key, value, context, userReviver) => {
   const isCustomFormatBigInt =
-    typeof value === "string" && value.match(customFormat);
+    typeof value === "string" && customFormat.test(value);
   if (isCustomFormatBigInt) return BigInt(value.slice(0, -1));
 
-  const isNoiseValue = typeof value === "string" && value.match(noiseValue);
+  const isNoiseValue = typeof value === "string" && noiseValue.test(value);
   if (isNoiseValue) return value.slice(0, -1);
 
   if (typeof userReviver !== "function") return value;
+
   return userReviver(key, value, context);
 };
 
 /**
- * Faster (2x) and simpler function to parse JSON.
- * Based on JSON.parse's context.source feature, which is not universally available now.
- * Does not support the legacy custom format, used in the first version of this library.
+ * Fast JSON.parse implementation (~2x faster than classic fallback).
+ * Uses JSON.parse's context.source feature to detect integers and convert
+ * large numbers directly to BigInt without string manipulation.
+ *
+ * Does not support legacy custom format from v1 of this library.
+ *
+ * @param {string} text JSON string to parse.
+ * @param {Reviver} [reviver] Transform function to apply to each value.
+ * @returns {any} Parsed JavaScript value.
  */
 const JSONParseV2 = (text, reviver) => {
   return JSON.parse(text, (key, value, context) => {
@@ -33316,9 +33666,21 @@ const stringsOrLargeNumbers =
 const noiseValueWithQuotes = /^"-?\d+n+"$/; // Noise - strings that match the custom format before being converted to it
 
 /**
- * Function to parse JSON.
- * If JSON has number values greater than Number.MAX_SAFE_INTEGER, we convert those values to a custom format, then parse them to BigInt values.
- * Other types of values are not affected and parsed as native JSON.parse() would parse them.
+ * Converts a JSON string into a JavaScript value.
+ *
+ * Supports parsing of large integers using two strategies:
+ * 1. Classic fallback: Marks large numbers with "123n" format, then converts to BigInt
+ * 2. Fast path (JSONParseV2): Uses context.source feature (~2x faster) when available
+ *
+ * All other JSON values are parsed exactly like native JSON.parse().
+ *
+ * @param {string} text A valid JSON string.
+ * @param {Reviver} [reviver]
+ *   A function that transforms the results. This function is called for each member
+ *   of the object. If a member contains nested objects, the nested objects are
+ *   transformed before the parent object is.
+ * @returns {any} The parsed JavaScript value.
+ * @throws {SyntaxError} If text is not valid JSON.
  */
 const JSONParse = (text, reviver) => {
   if (!text) return originalParse(text, reviver);
@@ -33330,7 +33692,7 @@ const JSONParse = (text, reviver) => {
     stringsOrLargeNumbers,
     (text, digits, fractional, exponential) => {
       const isString = text[0] === '"';
-      const isNoise = isString && Boolean(text.match(noiseValueWithQuotes));
+      const isNoise = isString && noiseValueWithQuotes.test(text);
 
       if (isNoise) return text.substring(0, text.length - 1) + 'n"'; // Mark noise values with additional "n" to offset the deletion of one "n" during the processing
 
@@ -36800,6 +37162,7 @@ const defaults = {
     }
 };
 const GitHub = Octokit.plugin(restEndpointMethods, paginateRest).defaults(defaults);
+
 /**
  * Convience function to correctly format Octokit Options to pass into the constructor.
  *
@@ -36812,6 +37175,11 @@ function getOctokitOptions(token, options) {
     const auth = getAuthString(token, opts);
     if (auth) {
         opts.auth = auth;
+    }
+    // Orchestration ID
+    const userAgent = getUserAgentWithOrchestrationId(opts.userAgent);
+    if (userAgent) {
+        opts.userAgent = userAgent;
     }
     return opts;
 }
@@ -36894,14 +37262,25 @@ async function run() {
                 return json;
             };
             let results;
-            if (!config.input_preserve_order) {
-                results = await Promise.all(files.map(uploadFile));
-            }
-            else {
+            if (config.input_preserve_order) {
                 results = [];
                 for (const path of files) {
                     results.push(await uploadFile(path));
                 }
+            }
+            else {
+                const concurrency = Math.max(1, Math.min(config.input_concurrency, files.length || 1));
+                results = new Array(files.length);
+                let nextIndex = 0;
+                const worker = async () => {
+                    while (true) {
+                        const i = nextIndex++;
+                        if (i >= files.length)
+                            return;
+                        results[i] = await uploadFile(files[i]);
+                    }
+                };
+                await Promise.all(Array.from({ length: concurrency }, () => worker()));
             }
             const assets = results.filter(Boolean);
             setOutput('assets', assets);

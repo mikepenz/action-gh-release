@@ -1,6 +1,6 @@
 import * as core from '@actions/core'
 import {getOctokit} from '@actions/github'
-import {alignAssetName, Config, isTag, releaseBody} from './util.js'
+import {alignAssetName, Config, isTag, normalizeTagName, releaseBody} from './util.js'
 import {statSync} from 'fs'
 import {open} from 'fs/promises'
 import {lookup} from 'mime-types'
@@ -42,6 +42,7 @@ export interface Releaser {
     discussion_category_name: string | undefined
     generate_release_notes: boolean | undefined
     make_latest: 'true' | 'false' | 'legacy' | undefined
+    previous_tag_name?: string
   }): Promise<{data: Release}>
 
   updateRelease(params: {
@@ -57,6 +58,7 @@ export interface Releaser {
     discussion_category_name: string | undefined
     generate_release_notes: boolean | undefined
     make_latest: 'true' | 'false' | 'legacy' | undefined
+    previous_tag_name?: string
   }): Promise<{data: Release}>
 
   finalizeRelease(params: {owner: string; repo: string; release_id: number}): Promise<{data: Release}>
@@ -79,6 +81,7 @@ export class GitHubReleaser implements Releaser {
     repo: string
     tag_name: string
     target_commitish: string | undefined
+    previous_tag_name?: string
   }): Promise<{data: {name: string; body: string}}> {
     return await this.github.rest.repos.generateReleaseNotes(params)
   }
@@ -101,12 +104,19 @@ export class GitHubReleaser implements Releaser {
     discussion_category_name: string | undefined
     generate_release_notes: boolean | undefined
     make_latest: 'true' | 'false' | 'legacy' | undefined
+    previous_tag_name?: string
   }): Promise<{data: Release}> {
     if (typeof params.make_latest === 'string' && !['true', 'false', 'legacy'].includes(params.make_latest)) {
       params.make_latest = undefined
     }
     if (params.generate_release_notes) {
-      const releaseNotes = await this.getReleaseNotes(params)
+      const releaseNotes = await this.getReleaseNotes({
+        owner: params.owner,
+        repo: params.repo,
+        tag_name: params.tag_name,
+        target_commitish: params.target_commitish,
+        previous_tag_name: params.previous_tag_name
+      })
       params.generate_release_notes = false
       if (params.body) {
         params.body = `${params.body}\n\n${releaseNotes.data.body}`
@@ -115,7 +125,8 @@ export class GitHubReleaser implements Releaser {
       }
     }
     params.body = params.body ? this.truncateReleaseNotes(params.body) : undefined
-    return this.github.rest.repos.createRelease(params)
+    const {previous_tag_name, ...createParams} = params
+    return this.github.rest.repos.createRelease(createParams)
   }
 
   async updateRelease(params: {
@@ -131,12 +142,19 @@ export class GitHubReleaser implements Releaser {
     discussion_category_name: string | undefined
     generate_release_notes: boolean | undefined
     make_latest: 'true' | 'false' | 'legacy' | undefined
+    previous_tag_name?: string
   }): Promise<{data: Release}> {
     if (typeof params.make_latest === 'string' && !['true', 'false', 'legacy'].includes(params.make_latest)) {
       params.make_latest = undefined
     }
     if (params.generate_release_notes) {
-      const releaseNotes = await this.getReleaseNotes(params)
+      const releaseNotes = await this.getReleaseNotes({
+        owner: params.owner,
+        repo: params.repo,
+        tag_name: params.tag_name,
+        target_commitish: params.target_commitish,
+        previous_tag_name: params.previous_tag_name
+      })
       params.generate_release_notes = false
       if (params.body) {
         params.body = `${params.body}\n\n${releaseNotes.data.body}`
@@ -145,7 +163,8 @@ export class GitHubReleaser implements Releaser {
       }
     }
     params.body = params.body ? this.truncateReleaseNotes(params.body) : undefined
-    return this.github.rest.repos.updateRelease(params)
+    const {previous_tag_name, ...updateParams} = params
+    return this.github.rest.repos.updateRelease(updateParams)
   }
 
   async finalizeRelease(params: {owner: string; repo: string; release_id: number}): Promise<{data: Release}> {
@@ -185,39 +204,59 @@ export const upload = async (
 ): Promise<any> => {
   const [owner, repo] = config.github_repository.split('/')
   const {name, mime, size} = asset(path)
-  const currentAsset = currentAssets.find(
-    // GitHub renames asset filenames with special characters; compare against the renamed version
-    ({name: currentName}) => currentName === alignAssetName(name)
-  )
-  if (currentAsset) {
+  // Extract the release id from the upload URL so we can refresh asset
+  // listings when a concurrent workflow has changed them out from under us.
+  const releaseIdMatch = url.match(/\/releases\/(\d+)\/assets/)
+  const releaseId = releaseIdMatch ? Number(releaseIdMatch[1]) : undefined
+
+  const matchesName = (a: {name: string}): boolean => a.name === name || a.name === alignAssetName(name)
+
+  const deleteIfPresent = async (asset_id: number) => {
+    try {
+      await github.rest.repos.deleteReleaseAsset({asset_id, owner, repo})
+    } catch (err: any) {
+      // 404 means another workflow already deleted it — safe to ignore.
+      if (err?.status !== 404) {
+        throw err
+      }
+    }
+  }
+
+  const existing = currentAssets.find(matchesName)
+  if (existing) {
     if (config.input_overwrite_files === false) {
       console.log(`Asset ${name} already exists and overwrite_files is false...`)
       return null
     } else {
       console.log(`♻️ Deleting previously uploaded asset ${name}...`)
-      await github.rest.repos.deleteReleaseAsset({
-        asset_id: currentAsset.id || 1,
-        owner,
-        repo
-      })
+      await deleteIfPresent(existing.id || 1)
     }
   }
   console.log(`⬆️ Uploading ${name}...`)
   const endpoint = new URL(url)
   endpoint.searchParams.append('name', name)
-  const fh = await open(path)
+
+  const doUpload = async () => {
+    const fh = await open(path)
+    try {
+      return await github.request({
+        method: 'POST',
+        url: endpoint.toString(),
+        headers: {
+          'content-length': `${size}`,
+          'content-type': mime,
+          authorization: `token ${config.github_token}`
+        },
+        data: fh.readableWebStream({type: 'bytes'})
+      })
+    } finally {
+      await fh.close()
+    }
+  }
+
   try {
-    const resp = await github.request({
-      method: 'POST',
-      url: endpoint.toString(),
-      headers: {
-        'content-length': `${size}`,
-        'content-type': mime,
-        authorization: `token ${config.github_token}`
-      },
-      data: fh.readableWebStream({type: 'bytes'})
-    })
-    const json = resp.data
+    let resp = await doUpload()
+    let json = resp.data
     if (resp.status !== 201) {
       throw new Error(
         `Failed to upload release asset ${name}. received status code ${resp.status}\n${json.message}\n${JSON.stringify(json.errors)}`
@@ -225,14 +264,46 @@ export const upload = async (
     }
     console.log(`✅ Uploaded ${name}`)
     return json
-  } catch (error) {
+  } catch (error: any) {
+    const status = error?.status ?? error?.response?.status
+    const errorData = error?.response?.data
+
+    // Race condition recovery: another workflow uploaded the same asset
+    // between our delete and our upload (or no prior asset existed and one
+    // appeared concurrently). Refresh the asset list, delete, retry once.
+    if (
+      config.input_overwrite_files !== false &&
+      status === 422 &&
+      errorData?.errors?.[0]?.code === 'already_exists' &&
+      releaseId !== undefined
+    ) {
+      console.log(`⚠️ Asset ${name} already exists (race condition); refreshing assets and retrying once...`)
+      try {
+        const latest = await github.paginate(github.rest.repos.listReleaseAssets, {
+          owner,
+          repo,
+          release_id: releaseId,
+          per_page: 100
+        })
+        const collision = (latest as {id: number; name: string}[]).find(matchesName)
+        if (collision) {
+          await deleteIfPresent(collision.id)
+          const resp = await doUpload()
+          if (resp.status === 201) {
+            console.log(`✅ Uploaded ${name}`)
+            return resp.data
+          }
+        }
+      } catch (refreshError) {
+        console.warn(`Race-condition recovery failed for ${name}: ${refreshError}`)
+      }
+    }
+
     if (config.input_fail_on_asset_upload_issue) {
       throw error
     }
     core.error(`Failed to upload asset ${name}. Received error: ${error}`)
     return null
-  } finally {
-    await fh.close()
   }
 }
 
@@ -259,6 +330,7 @@ const createNewRelease = async (
   repo: string,
   discussion_category_name: string | undefined,
   generate_release_notes: boolean | undefined,
+  previous_tag_name: string | undefined,
   maxRetries: number
 ): Promise<Release> => {
   const tag_name = tag
@@ -284,7 +356,8 @@ const createNewRelease = async (
       target_commitish,
       discussion_category_name,
       generate_release_notes,
-      make_latest
+      make_latest,
+      previous_tag_name
     })
     return rel.data
   } catch (error: any) {
@@ -317,6 +390,32 @@ const createNewRelease = async (
   }
 }
 
+// Eagerly look up a release by its tag using the dedicated GitHub API endpoint.
+// Falls back to undefined on 404 so the caller can create a new release.
+const getReleaseByTagOrUndefined = async (
+  releaser: Releaser,
+  owner: string,
+  repo: string,
+  tag: string
+): Promise<Release | undefined> => {
+  try {
+    const {data} = await releaser.getReleaseByTag({owner, repo, tag})
+    return data
+  } catch (error: any) {
+    if (error?.status === 404) {
+      return undefined
+    }
+    // For drafts (which have no tag yet), getReleaseByTag may not find them.
+    // Fall back to the legacy pagination-based lookup so existing drafts
+    // matching the tag name are still found.
+    try {
+      return await findTagFromReleases(releaser, owner, repo, tag)
+    } catch {
+      throw error
+    }
+  }
+}
+
 export const release = async (config: Config, releaser: Releaser, maxRetries = 3): Promise<Release> => {
   if (maxRetries <= 0) {
     core.error(`❌ Too many retries. Aborting...`)
@@ -324,12 +423,21 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
   }
 
   const [owner, repo] = config.github_repository.split('/')
-  const tag = config.input_tag_name || (isTag(config.github_ref) ? config.github_ref.replace('refs/tags/', '') : '')
+  const tag =
+    normalizeTagName(config.input_tag_name) ||
+    (isTag(config.github_ref) ? config.github_ref.replace('refs/tags/', '') : '')
 
   const discussion_category_name = config.input_discussion_category_name
   const generate_release_notes = config.input_generate_release_notes
+  const previous_tag_name = config.input_previous_tag
+
+  if (generate_release_notes && previous_tag_name) {
+    console.log(`📝 Generating release notes using previous tag ${previous_tag_name}`)
+  }
   try {
-    const existingRelease = await findTagFromReleases(releaser, owner, repo, tag)
+    // Fast path: direct getReleaseByTag instead of paginating all releases.
+    // Falls back to pagination internally for draft-without-tag scenarios.
+    const existingRelease = await getReleaseByTagOrUndefined(releaser, owner, repo, tag)
 
     if (existingRelease === undefined) {
       return await createNewRelease(
@@ -340,6 +448,7 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
         repo,
         discussion_category_name,
         generate_release_notes,
+        previous_tag_name,
         maxRetries
       )
     }
@@ -381,7 +490,8 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
       prerelease,
       discussion_category_name,
       generate_release_notes,
-      make_latest
+      make_latest,
+      previous_tag_name
     })
     return rel.data
   } catch (error: any) {
@@ -398,6 +508,7 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
       repo,
       discussion_category_name,
       generate_release_notes,
+      previous_tag_name,
       maxRetries
     )
   }

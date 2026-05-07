@@ -34,6 +34,10 @@ inputs:
   preserve_order:
     description: "Preserve the order of the artifacts when uploading"
     required: false
+  concurrency:
+    description: "Maximum number of assets to upload in parallel. Ignored when preserve_order is true. Defaults to 4."
+    required: false
+    default: '4'
   fail_on_unmatched_files:
     description: "Fails if any of the `files` globs match nothing. Defaults to false"
     required: false
@@ -55,6 +59,9 @@ inputs:
     required: false
   generate_release_notes:
     description: "Whether to automatically generate the name and body for this release. If name is specified, the specified name will be used; otherwise, a name will be automatically generated. If body is specified, the body will be pre-pended to the automatically generated notes."
+    required: false
+  previous_tag:
+    description: "When generate_release_notes is true, use this tag as the starting point instead of letting GitHub auto-detect the previous release."
     required: false
   append_body:
     description: "Append to existing body instead of overwriting it. Default is false."

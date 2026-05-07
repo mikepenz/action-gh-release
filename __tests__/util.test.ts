@@ -68,7 +68,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         })
       )
     })
@@ -91,7 +93,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         })
       )
     })
@@ -114,7 +118,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         })
       )
     })
@@ -136,7 +142,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }),
         'fallback-body'
       )
@@ -159,7 +167,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }),
         undefined
       )
@@ -198,7 +208,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
@@ -228,7 +240,9 @@ describe('util', () => {
           input_target_commitish: 'affa18ef97bc9db20076945705aba8c516139abd',
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
@@ -257,7 +271,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: 'releases',
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
@@ -287,12 +303,14 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: true,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
 
-    it('prefers GITHUB_TOKEN over token input for backwards compatibility', () => {
+    it('prefers token input over GITHUB_TOKEN env var', () => {
       assert.deepStrictEqual(
         parseConfig({
           INPUT_DRAFT: 'false',
@@ -304,7 +322,7 @@ describe('util', () => {
         {
           github_ref: '',
           github_repository: '',
-          github_token: 'env-token',
+          github_token: 'input-token',
           input_working_directory: undefined,
           input_append_body: false,
           input_body: undefined,
@@ -321,7 +339,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
@@ -352,7 +372,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
@@ -382,7 +404,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
@@ -411,7 +435,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: 'false'
+          input_make_latest: 'false',
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
@@ -440,7 +466,9 @@ describe('util', () => {
           input_target_commitish: undefined,
           input_discussion_category_name: undefined,
           input_generate_release_notes: false,
-          input_make_latest: undefined
+          input_make_latest: undefined,
+          input_previous_tag: undefined,
+          input_concurrency: 4
         }
       )
     })
