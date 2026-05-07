@@ -32648,7 +32648,7 @@ const upload = async (config, github, url, path, currentAssets) => {
                     'content-type': mime,
                     authorization: `token ${config.github_token}`
                 },
-                data: fh.readableWebStream({ type: 'bytes' })
+                data: fh.readableWebStream()
             });
         }
         finally {
