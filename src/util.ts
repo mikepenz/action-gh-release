@@ -1,6 +1,9 @@
 import {globSync} from 'glob'
 import {statSync, readFileSync} from 'fs'
+import {homedir} from 'os'
 import * as pathLib from 'path'
+
+export const DEFAULT_UPLOAD_CONCURRENCY = 4
 
 export interface Config {
   github_token: string
@@ -23,8 +26,10 @@ export interface Config {
   input_target_commitish?: string
   input_discussion_category_name?: string
   input_generate_release_notes?: boolean
+  input_previous_tag?: string
   input_append_body?: boolean
   input_make_latest: 'true' | 'false' | 'legacy' | undefined
+  input_concurrency: number
 }
 
 export const uploadUrl = (url: string): string => {
@@ -91,13 +96,37 @@ const parseMakeLatest = (value: string | undefined): 'true' | 'false' | 'legacy'
   return undefined
 }
 
+const parseToken = (env: Env): string => {
+  const inputToken = env.INPUT_TOKEN?.trim()
+  if (inputToken) {
+    return inputToken
+  }
+  return env.GITHUB_TOKEN?.trim() || ''
+}
+
+const parseConcurrency = (raw: string | undefined): number => {
+  if (!raw) {
+    return DEFAULT_UPLOAD_CONCURRENCY
+  }
+  const trimmed = raw.trim()
+  if (trimmed === '') {
+    return DEFAULT_UPLOAD_CONCURRENCY
+  }
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    console.warn(`⚠️ Invalid concurrency "${raw}", falling back to default (${DEFAULT_UPLOAD_CONCURRENCY}).`)
+    return DEFAULT_UPLOAD_CONCURRENCY
+  }
+  return Math.floor(parsed)
+}
+
 export const parseConfig = (env: Env): Config => {
   return {
-    github_token: env.GITHUB_TOKEN || env.INPUT_TOKEN || '',
+    github_token: parseToken(env),
     github_ref: env.GITHUB_REF || '',
     github_repository: env.INPUT_REPOSITORY || env.GITHUB_REPOSITORY || '',
     input_name: env.INPUT_NAME,
-    input_tag_name: env.INPUT_TAG_NAME?.trim(),
+    input_tag_name: normalizeTagName(env.INPUT_TAG_NAME?.trim()),
     input_body: env.INPUT_BODY,
     input_body_path: env.INPUT_BODY_PATH,
     input_files: parseInputFiles(env.INPUT_FILES || ''),
@@ -111,16 +140,43 @@ export const parseConfig = (env: Env): Config => {
     input_target_commitish: env.INPUT_TARGET_COMMITISH || undefined,
     input_discussion_category_name: env.INPUT_DISCUSSION_CATEGORY_NAME || undefined,
     input_generate_release_notes: env.INPUT_GENERATE_RELEASE_NOTES === 'true',
+    input_previous_tag: env.INPUT_PREVIOUS_TAG?.trim() || undefined,
     input_append_body: env.INPUT_APPEND_BODY === 'true',
-    input_make_latest: parseMakeLatest(env.INPUT_MAKE_LATEST)
+    input_make_latest: parseMakeLatest(env.INPUT_MAKE_LATEST),
+    input_concurrency: parseConcurrency(env.INPUT_CONCURRENCY)
   }
+}
+
+export const normalizeGlobPattern = (pattern: string, platform: NodeJS.Platform = process.platform): string => {
+  if (platform === 'win32') {
+    return pattern.replace(/\\/g, '/')
+  }
+  return pattern
+}
+
+export const expandHomePattern = (pattern: string, homeDirectory: string = homedir()): string => {
+  if (pattern === '~') {
+    return homeDirectory
+  }
+  if (pattern.startsWith('~/') || pattern.startsWith('~\\')) {
+    return pathLib.join(homeDirectory, pattern.slice(2))
+  }
+  return pattern
+}
+
+export const normalizeFilePattern = (
+  pattern: string,
+  platform: NodeJS.Platform = process.platform,
+  homeDirectory: string = homedir()
+): string => {
+  return normalizeGlobPattern(expandHomePattern(pattern, homeDirectory), platform)
 }
 
 export const paths = (patterns: string[], cwd?: string): string[] => {
   return patterns.reduce((acc: string[], pattern: string): string[] => {
-    const matches = globSync(pattern, {cwd, dot: true, absolute: false})
+    const matches = globSync(normalizeFilePattern(pattern), {cwd, dot: true, absolute: false})
     const resolved = matches
-      .map(p => (cwd ? pathLib.join(cwd, p) : p))
+      .map(p => (cwd && !pathLib.isAbsolute(p) ? pathLib.join(cwd, p) : p))
       .filter(p => {
         try {
           return statSync(p).isFile()
@@ -134,10 +190,10 @@ export const paths = (patterns: string[], cwd?: string): string[] => {
 
 export const unmatchedPatterns = (patterns: string[], cwd?: string): string[] => {
   return patterns.reduce((acc: string[], pattern: string): string[] => {
-    const matches = globSync(pattern, {cwd, dot: true, absolute: false})
+    const matches = globSync(normalizeFilePattern(pattern), {cwd, dot: true, absolute: false})
     const files = matches.filter(p => {
       try {
-        const full = cwd ? pathLib.join(cwd, p) : p
+        const full = cwd && !pathLib.isAbsolute(p) ? pathLib.join(cwd, p) : p
         return statSync(full).isFile()
       } catch {
         return false
@@ -149,6 +205,13 @@ export const unmatchedPatterns = (patterns: string[], cwd?: string): string[] =>
 
 export const isTag = (ref: string): boolean => {
   return ref.startsWith('refs/tags/')
+}
+
+export const normalizeTagName = (tag: string | undefined): string | undefined => {
+  if (!tag) {
+    return tag
+  }
+  return isTag(tag) ? tag.replace('refs/tags/', '') : tag
 }
 
 export const alignAssetName = (assetName: string): string => {

@@ -61,13 +61,23 @@ async function run(): Promise<void> {
       }
 
       let results: (any | null)[]
-      if (!config.input_preserve_order) {
-        results = await Promise.all(files.map(uploadFile))
-      } else {
+      if (config.input_preserve_order) {
         results = []
         for (const path of files) {
           results.push(await uploadFile(path))
         }
+      } else {
+        const concurrency = Math.max(1, Math.min(config.input_concurrency, files.length || 1))
+        results = new Array(files.length)
+        let nextIndex = 0
+        const worker = async () => {
+          while (true) {
+            const i = nextIndex++
+            if (i >= files.length) return
+            results[i] = await uploadFile(files[i])
+          }
+        }
+        await Promise.all(Array.from({length: concurrency}, () => worker()))
       }
 
       const assets = results.filter(Boolean)
