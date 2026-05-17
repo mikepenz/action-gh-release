@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       # https://github.com/actions/checkout
       - name: Checkout
@@ -19,7 +21,7 @@ jobs:
 
       - name: Install NPM
         run: |
-          npm install
+          npm ci
           
       - name: Run NPM
         run: |
