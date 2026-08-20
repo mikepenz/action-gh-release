@@ -30,6 +30,8 @@ export interface Config {
   input_append_body?: boolean
   input_make_latest: 'true' | 'false' | 'legacy' | undefined
   input_concurrency: number
+  input_on_tag_conflict: 'fail' | 'update'
+  input_draft_during_upload: boolean
 }
 
 export const uploadUrl = (url: string): string => {
@@ -96,6 +98,10 @@ const parseMakeLatest = (value: string | undefined): 'true' | 'false' | 'legacy'
   return undefined
 }
 
+const parseOnTagConflict = (value: string | undefined): 'fail' | 'update' => {
+  return value?.trim() === 'fail' ? 'fail' : 'update'
+}
+
 const parseToken = (env: Env): string => {
   const inputToken = env.INPUT_TOKEN?.trim()
   if (inputToken) {
@@ -143,7 +149,9 @@ export const parseConfig = (env: Env): Config => {
     input_previous_tag: env.INPUT_PREVIOUS_TAG?.trim() || undefined,
     input_append_body: env.INPUT_APPEND_BODY === 'true',
     input_make_latest: parseMakeLatest(env.INPUT_MAKE_LATEST),
-    input_concurrency: parseConcurrency(env.INPUT_CONCURRENCY)
+    input_concurrency: parseConcurrency(env.INPUT_CONCURRENCY),
+    input_on_tag_conflict: parseOnTagConflict(env.INPUT_ON_TAG_CONFLICT),
+    input_draft_during_upload: env.INPUT_DRAFT_DURING_UPLOAD?.trim() !== 'false'
   }
 }
 

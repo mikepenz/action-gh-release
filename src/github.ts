@@ -63,7 +63,19 @@ export interface Releaser {
 
   finalizeRelease(params: {owner: string; repo: string; release_id: number}): Promise<{data: Release}>
 
+  deleteRelease(params: {owner: string; repo: string; release_id: number}): Promise<unknown>
+
   allReleases(params: {owner: string; repo: string}): AsyncIterable<{data: Release[]}>
+}
+
+// GitHub rejects publishing a draft when another release already claims the tag,
+// which happens when a concurrent job created the release while we were uploading.
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+export const isTagConflict = (error: any): boolean => {
+  const status = error?.status ?? error?.response?.status
+  const errors = error?.response?.data?.errors ?? error?.errors
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  return status === 422 && !!errors?.some((e: any) => e.code === 'already_exists' && e.field === 'tag_name')
 }
 
 export class GitHubReleaser implements Releaser {
@@ -174,6 +186,10 @@ export class GitHubReleaser implements Releaser {
       release_id: params.release_id,
       draft: false
     })
+  }
+
+  async deleteRelease(params: {owner: string; repo: string; release_id: number}): Promise<unknown> {
+    return await this.github.rest.repos.deleteRelease(params)
   }
 
   allReleases(params: {owner: string; repo: string}): AsyncIterable<{data: Release[]}> {
@@ -343,6 +359,11 @@ const createNewRelease = async (
   if (target_commitish) {
     commitMessage = ` using commit "${target_commitish}"`
   }
+  // Uploading into a draft keeps the release hidden until the assets are there, at the
+  // cost of a long window in which a concurrent job can claim the tag. Creating it
+  // published up front shrinks that window to this single call, which already recovers
+  // from `already_exists` below.
+  const draft = config.input_draft === true || config.input_draft_during_upload
   console.log(`👩‍🏭 Creating new GitHub release for tag ${tag_name}${commitMessage}...`)
   try {
     const rel = await releaser.createRelease({
@@ -351,7 +372,7 @@ const createNewRelease = async (
       tag_name,
       name,
       body,
-      draft: true,
+      draft,
       prerelease,
       target_commitish,
       discussion_category_name,
@@ -539,6 +560,20 @@ export const finalizeRelease = async (
     })
     return data
   } catch (error) {
+    // A concurrent job published a release for this tag while we were uploading.
+    // Retrying can never succeed, so either fail fast or adopt the existing release.
+    if (isTagConflict(error)) {
+      if (config.input_on_tag_conflict === 'fail') {
+        console.log(`❌ Another release already claims tag ${rel.tag_name} and on_tag_conflict is "fail"`)
+        throw error
+      }
+      console.log(`⚠️ Another release already claims tag ${rel.tag_name}; updating that release instead...`)
+      await releaser
+        .deleteRelease({owner, repo, release_id: rel.id})
+        .catch(err => console.warn(`⚠️ Failed to clean up draft release ${rel.id}: ${err}`))
+      return await release(config, releaser)
+    }
+
     console.warn(`error finalizing release: ${error}`)
     console.log(`retrying... (${maxRetries - 1} retries remaining)`)
     return finalizeRelease(config, releaser, rel, maxRetries - 1)

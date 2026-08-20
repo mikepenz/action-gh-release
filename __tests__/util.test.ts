@@ -70,7 +70,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         })
       )
     })
@@ -95,7 +97,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         })
       )
     })
@@ -120,7 +124,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         })
       )
     })
@@ -144,7 +150,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }),
         'fallback-body'
       )
@@ -169,7 +177,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }),
         undefined
       )
@@ -210,7 +220,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -242,7 +254,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -273,7 +287,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -305,7 +321,9 @@ describe('util', () => {
           input_generate_release_notes: true,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -341,7 +359,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -374,7 +394,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -406,7 +428,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -437,7 +461,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: 'false',
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })
@@ -468,7 +494,9 @@ describe('util', () => {
           input_generate_release_notes: false,
           input_make_latest: undefined,
           input_previous_tag: undefined,
-          input_concurrency: 4
+          input_concurrency: 4,
+          input_on_tag_conflict: 'update',
+          input_draft_during_upload: true
         }
       )
     })

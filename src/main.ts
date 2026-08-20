@@ -1,6 +1,6 @@
 import * as core from '@actions/core'
 import {paths, parseConfig, isTag, unmatchedPatterns, uploadUrl} from './util.js'
-import {release, upload, finalizeRelease, GitHubReleaser} from './github.js'
+import {release, upload, finalizeRelease, GitHubReleaser, Release} from './github.js'
 import {getOctokit} from '@actions/github'
 
 import {env} from 'process'
@@ -41,7 +41,11 @@ async function run(): Promise<void> {
     })
     const releaser = new GitHubReleaser(gh)
     let rel = await release(config, releaser)
-    if (config.input_files && config.input_files?.length > 0) {
+
+    const uploadAssets = async (target: Release) => {
+      if (!config.input_files || config.input_files.length === 0) {
+        return
+      }
       const files = paths(config.input_files, config.input_working_directory)
       if (files.length === 0) {
         if (config.input_fail_on_unmatched_files) {
@@ -50,10 +54,10 @@ async function run(): Promise<void> {
           core.warning(`🤔 ${config.input_files} not include valid file.`)
         }
       }
-      const currentAssets = rel.assets
+      const currentAssets = target.assets
 
       const uploadFile = async (path: string) => {
-        const json = await upload(config, gh, uploadUrl(rel.upload_url), path, currentAssets)
+        const json = await upload(config, gh, uploadUrl(target.upload_url), path, currentAssets)
         if (json) {
           delete json.uploader
         }
@@ -84,8 +88,17 @@ async function run(): Promise<void> {
       core.setOutput('assets', assets)
     }
 
+    await uploadAssets(rel)
+
     console.log('Finalizing release...')
+    const finalizedFrom = rel.id
     rel = await finalizeRelease(config, releaser, rel)
+    if (rel.id !== finalizedFrom) {
+      // on_tag_conflict=update switched us to a release created by another job,
+      // so our assets have to be uploaded again onto it.
+      await uploadAssets(rel)
+      rel = await finalizeRelease(config, releaser, rel)
+    }
 
     core.info(`🎉 Release ready at ${rel.html_url}`)
     core.setOutput('url', rel.html_url)
