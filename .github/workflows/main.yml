@@ -5,6 +5,9 @@ on:
       - '*'
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,8 +22,8 @@ jobs:
 
       - name: Install NPM
         run: |
-          npm install
-          
+          npm ci
+
       - name: Run NPM
         run: |
           npm run all
@@ -43,18 +46,26 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
-      - run: npm ci && npm run build && npm run package
+      # --ignore-scripts: this job installs not-yet-reviewed dependency bumps while
+      # holding contents: write and RENOVATE_TOKEN, so lifecycle scripts stay off.
+      - run: npm ci --ignore-scripts && npm run build && npm run package
       - name: Commit rebuilt dist
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REPOSITORY: ${{ github.repository }}
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
         run: |
           git config user.name "Mike Penz"
           git config user.email "opensource-bot@mikepenz.dev"
           git add dist/
           git diff --staged --quiet || git commit -m "chore: rebuild dist for renovate"
-          git push https://x-access-token:${{ secrets.RENOVATE_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.event.pull_request.head.ref }}
+          git push "https://x-access-token:${RENOVATE_TOKEN}@github.com/${REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
