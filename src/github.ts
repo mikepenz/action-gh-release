@@ -96,6 +96,25 @@ export interface Releaser {
   allReleases(params: {owner: string; repo: string}): AsyncIterable<{data: Release[]}>
 }
 
+// Repositories with immutable releases enabled reject asset uploads once the release is
+// published — the assets have to be in place while it is still a draft.
+const isImmutableReleaseAssetUploadFailure = (error: unknown): boolean => {
+  const record = typeof error === 'object' && error !== null ? (error as any) : undefined
+  const message = record?.response?.data?.message ?? record?.message
+  return errorStatus(error) === 422 && /immutable release/i.test(String(message))
+}
+
+const immutableReleaseAssetUploadMessage = (name: string, config: Config): string => {
+  const base = `Cannot upload asset ${name} to an immutable release. GitHub only allows asset uploads before a release is published.`
+  if (config.input_prerelease) {
+    return `${base} Draft prereleases publish with the release.published event instead of release.prereleased, so set draft: true to keep the release a draft, publish it later from that draft, and subscribe downstream workflows to release.published.`
+  }
+  if (config.input_draft_during_upload === false) {
+    return `${base} Remove draft_during_upload: false so the release stays a draft until its assets are uploaded.`
+  }
+  return `${base} Upload assets to a draft release before you publish it.`
+}
+
 // GitHub rejects publishing a draft when another release already claims the tag,
 // which happens when a concurrent job created the release while we were uploading.
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -332,6 +351,17 @@ export const upload = async (
   } catch (error: any) {
     const status = errorStatus(error)
     const errorData = error?.response?.data
+
+    // Retrying can never succeed while the release is published, so report the
+    // misconfiguration instead of the raw 422.
+    if (isImmutableReleaseAssetUploadFailure(error)) {
+      const message = immutableReleaseAssetUploadMessage(name, config)
+      if (config.input_fail_on_asset_upload_issue) {
+        throw new Error(message)
+      }
+      core.error(message)
+      return null
+    }
 
     // Race condition recovery: another workflow uploaded the same asset
     // between our delete and our upload (or no prior asset existed and one
