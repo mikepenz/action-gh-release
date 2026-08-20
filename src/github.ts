@@ -1,12 +1,40 @@
 import * as core from '@actions/core'
 import {getOctokit} from '@actions/github'
-import {alignAssetName, Config, isTag, normalizeTagName, releaseBody} from './util.js'
+import {alignAssetName, Config, errorMessage, isTag, normalizeTagName, releaseBody} from './util.js'
 import {statSync} from 'fs'
-import {open} from 'fs/promises'
+import {open, type FileHandle} from 'fs/promises'
 import {lookup} from 'mime-types'
 import {basename} from 'path'
 
 type NewGitHub = ReturnType<typeof getOctokit>
+
+type UploadChunk = ArrayBuffer | Uint8Array<ArrayBufferLike>
+
+// `readableWebStream()` can yield raw ArrayBuffers, which undici refuses to send as a
+// request body — small assets (checksums, signatures) end up uploaded empty.
+const fileUploadStream = (fileHandle: FileHandle): ReadableStream<Uint8Array<ArrayBufferLike>> => {
+  const source = fileHandle.readableWebStream() as ReadableStream<UploadChunk>
+  return source.pipeThrough(
+    new TransformStream<UploadChunk, Uint8Array<ArrayBufferLike>>({
+      transform(chunk, controller) {
+        controller.enqueue(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk))
+      }
+    })
+  )
+}
+
+// Errors reaching us are not guaranteed to be Octokit errors — a thrown string or null
+// would blow up on a plain `error.status` read.
+export const errorStatus = (error: unknown): number | undefined => {
+  const record = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : undefined
+  if (typeof record?.status === 'number') {
+    return record.status
+  }
+  const response = record?.response
+  const responseRecord =
+    typeof response === 'object' && response !== null ? (response as Record<string, unknown>) : undefined
+  return typeof responseRecord?.status === 'number' ? responseRecord.status : undefined
+}
 
 export interface ReleaseAsset {
   name: string
@@ -72,7 +100,7 @@ export interface Releaser {
 // which happens when a concurrent job created the release while we were uploading.
 /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export const isTagConflict = (error: any): boolean => {
-  const status = error?.status ?? error?.response?.status
+  const status = errorStatus(error)
   const errors = error?.response?.data?.errors ?? error?.errors
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   return status === 422 && !!errors?.some((e: any) => e.code === 'already_exists' && e.field === 'tag_name')
@@ -231,9 +259,30 @@ export const upload = async (
     try {
       await github.rest.repos.deleteReleaseAsset({asset_id, owner, repo})
     } catch (err: any) {
-      // 404 means another workflow already deleted it — safe to ignore.
-      if (err?.status !== 404) {
+      if (errorStatus(err) !== 404) {
         throw err
+      }
+      // Gitea only serves the release-scoped delete endpoint, so a 404 here may mean
+      // "wrong endpoint" rather than "already gone". Retry before giving up.
+      if (releaseId === undefined) {
+        return
+      }
+      try {
+        await github.request('DELETE /repos/{owner}/{repo}/releases/{release_id}/assets/{asset_id}', {
+          owner,
+          repo,
+          release_id: releaseId,
+          asset_id
+        })
+      } catch (fallbackErr: any) {
+        // 404 on both endpoints means another workflow already deleted it — safe to ignore.
+        if (errorStatus(fallbackErr) === 404) {
+          return
+        }
+        throw new AggregateError(
+          [err, fallbackErr],
+          `Failed to delete release asset ${asset_id}. GitHub endpoint: ${errorMessage(err)}; release-scoped endpoint: ${errorMessage(fallbackErr)}`
+        )
       }
     }
   }
@@ -263,7 +312,7 @@ export const upload = async (
           'content-type': mime,
           authorization: `token ${config.github_token}`
         },
-        data: fh.readableWebStream()
+        data: fileUploadStream(fh)
       })
     } finally {
       await fh.close()
@@ -281,7 +330,7 @@ export const upload = async (
     console.log(`✅ Uploaded ${name}`)
     return json
   } catch (error: any) {
-    const status = error?.status ?? error?.response?.status
+    const status = errorStatus(error)
     const errorData = error?.response?.data
 
     // Race condition recovery: another workflow uploaded the same asset
@@ -323,16 +372,25 @@ export const upload = async (
   }
 }
 
+// Releases are listed newest first, so a draft awaiting its tag shows up on the first
+// pages. Bounding the scan keeps the fallback cheap on repositories with many releases.
+const RECENT_RELEASE_SCAN_PAGES = 2
+
 export const findTagFromReleases = async (
   releaser: Releaser,
   owner: string,
   repo: string,
-  tag: string
+  tag: string,
+  maxPages = RECENT_RELEASE_SCAN_PAGES
 ): Promise<Release | undefined> => {
+  let pages = 0
   for await (const {data: releases} of releaser.allReleases({owner, repo})) {
     const rel = releases.find(r => r.tag_name === tag)
     if (rel) {
       return rel
+    }
+    if (++pages >= maxPages) {
+      break
     }
   }
   return undefined
@@ -382,16 +440,23 @@ const createNewRelease = async (
     })
     return rel.data
   } catch (error: any) {
-    console.log(`⚠️ GitHub release failed with status: ${error.status}`)
-    console.log(`${JSON.stringify(error.response?.data)}`)
+    const status = errorStatus(error)
+    console.log(`⚠️ GitHub release failed with status: ${status}`)
+    console.log(`${JSON.stringify(error?.response?.data) ?? errorMessage(error)}`)
 
-    switch (error.status) {
+    switch (status) {
       case 403:
         console.log('Skip retry — your GitHub token/PAT does not have the required permission to create a release')
         throw error
-      case 404:
-        console.log('Skip retry - discussion category mismatch')
+      case 404: {
+        const discussionGuidance = discussion_category_name
+          ? ` Also verify that Discussions and the requested category "${discussion_category_name}" are enabled.`
+          : ''
+        console.log(
+          `Skip retry — GitHub returned 404 while creating the release. Verify that ${owner}/${repo} exists under the expected owner, the token can access it, the repository is selected when using a fine-grained PAT, and the token has Contents: write permission.${discussionGuidance} GitHub response: ${errorMessage(error)}`
+        )
         throw error
+      }
       case 422: {
         const errorData = error.response?.data
         if (errorData?.errors?.[0]?.code === 'already_exists') {
@@ -412,7 +477,7 @@ const createNewRelease = async (
 }
 
 // Eagerly look up a release by its tag using the dedicated GitHub API endpoint.
-// Falls back to undefined on 404 so the caller can create a new release.
+// Returns undefined when no release matches, so the caller can create a new one.
 const getReleaseByTagOrUndefined = async (
   releaser: Releaser,
   owner: string,
@@ -423,17 +488,12 @@ const getReleaseByTagOrUndefined = async (
     const {data} = await releaser.getReleaseByTag({owner, repo, tag})
     return data
   } catch (error: any) {
-    if (error?.status === 404) {
-      return undefined
-    }
-    // For drafts (which have no tag yet), getReleaseByTag may not find them.
-    // Fall back to the legacy pagination-based lookup so existing drafts
-    // matching the tag name are still found.
-    try {
-      return await findTagFromReleases(releaser, owner, repo, tag)
-    } catch {
+    if (errorStatus(error) !== 404) {
       throw error
     }
+    // GitHub does not expose draft releases through getReleaseByTag, so a 404 falls
+    // back to a bounded listing scan to pick up a draft awaiting this tag.
+    return await findTagFromReleases(releaser, owner, repo, tag)
   }
 }
 
@@ -516,7 +576,7 @@ export const release = async (config: Config, releaser: Releaser, maxRetries = 3
     })
     return rel.data
   } catch (error: any) {
-    if (error.status !== 404) {
+    if (errorStatus(error) !== 404) {
       console.log(`⚠️ Unexpected error fetching GitHub release for tag ${config.github_ref}: ${error}`)
       throw error
     }

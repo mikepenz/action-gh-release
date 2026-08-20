@@ -1,6 +1,6 @@
 import {asset, finalizeRelease, findTagFromReleases, mimeOrDefault, release, Release, Releaser} from '../src/github'
 
-import {assert, describe, it} from 'vitest'
+import {assert, describe, expect, it} from 'vitest'
 
 describe('github', () => {
   describe('mimeOrDefault', () => {
@@ -77,6 +77,24 @@ describe('github', () => {
         const result = await findTagFromReleases(releaser, owner, repo, targetTag)
 
         assert.deepStrictEqual(result, targetRelease)
+      })
+
+      it('stops scanning after the bounded number of pages', async () => {
+        let pages = 0
+        const releaser = {
+          ...mockReleaser,
+          allReleases: async function* () {
+            for (;;) {
+              pages++
+              yield {data: [{...mockRelease, tag_name: 'v1.0.1'}]}
+            }
+          }
+        }
+
+        const result = await findTagFromReleases(releaser, owner, repo, targetTag)
+
+        assert.strictEqual(result, undefined)
+        assert.strictEqual(pages, 2)
       })
 
       it('finds a matching release in second batch of results', async () => {
@@ -233,7 +251,8 @@ describe('github', () => {
   describe('error handling', () => {
     it('handles 422 already_exists error gracefully', async () => {
       const mockReleaser: Releaser = {
-        getReleaseByTag: () => Promise.reject('Not implemented'),
+        // drafts are invisible to getReleaseByTag, which 404s and falls back to listing
+        getReleaseByTag: () => Promise.reject({status: 404}),
         createRelease: () =>
           Promise.reject({
             status: 422,
@@ -300,6 +319,35 @@ describe('github', () => {
       const result = await release(config, mockReleaser, 1)
       assert.ok(result)
       assert.equal(result.id, 1)
+    })
+
+    it('propagates non-404 lookup failures instead of scanning releases', async () => {
+      const releaser = {
+        getReleaseByTag: () => Promise.reject({status: 500}),
+        createRelease: () => Promise.reject('should not create'),
+        updateRelease: () => Promise.reject('should not update'),
+        finalizeRelease: async () => {},
+        deleteRelease: async () => {},
+        allReleases: async function* () {
+          throw new Error('should not list releases')
+        }
+      } as unknown as Releaser
+
+      const config = {
+        github_token: 'test-token',
+        github_ref: 'refs/tags/v1.0.0',
+        github_repository: 'owner/repo',
+        input_files: [],
+        input_fail_on_unmatched_files: false,
+        input_generate_release_notes: false,
+        input_append_body: false,
+        input_make_latest: undefined,
+        input_concurrency: 4,
+        input_on_tag_conflict: 'update' as const,
+        input_draft_during_upload: true
+      }
+
+      await expect(release(config, releaser, 1)).rejects.toMatchObject({status: 500})
     })
   })
 })

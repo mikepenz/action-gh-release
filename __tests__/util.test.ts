@@ -1,5 +1,6 @@
 import {
   alignAssetName,
+  errorMessage,
   isTag,
   parseConfig,
   parseInputFiles,
@@ -12,6 +13,19 @@ import {
 import {assert, describe, expect, it} from 'vitest'
 
 describe('util', () => {
+  describe('errorMessage', () => {
+    it('reads messages off errors and error-like objects', () => {
+      assert.equal(errorMessage(new Error('boom')), 'boom')
+      assert.equal(errorMessage({message: 'api boom'}), 'api boom')
+    })
+    it('falls back for non-error values', () => {
+      assert.equal(errorMessage(undefined), 'Unknown error')
+      assert.equal(errorMessage(null), 'Unknown error')
+      assert.equal(errorMessage('plain'), 'plain')
+      assert.equal(errorMessage(404), '404')
+    })
+  })
+
   describe('uploadUrl', () => {
     it('strips template', () => {
       assert.equal(
