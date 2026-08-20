@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470" role="img" aria-labelledby="t d">
+  <title id="t">action-gh-release</title>
+  <desc id="d">A GitHub Action that turns a tag push into a published GitHub Release with its assets uploaded.</desc>
+  <rect width="1200" height="470" rx="24" fill="#0d1117"/>
+  <rect x="1" y="1" width="1198" height="468" rx="23" fill="none" stroke="#30363d"/>
+
+  <g transform="translate(64 118)">
+    <text font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#3fb950" letter-spacing="1.5">GITHUB ACTION &#183; NODE 24</text>
+    <text y="74" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="56" font-weight="700" fill="#e6edf3">action-gh-release</text>
+    <text y="128" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="23" fill="#9198a1">Create GitHub Releases and upload their</text>
+    <text y="160" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="23" fill="#9198a1">assets, straight from a workflow step.</text>
+    <g transform="translate(0 198)"><rect x="0" y="0" width="58" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="29" y="18" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">Linux</text><rect x="66" y="0" width="73" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="102.5" y="18" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">Windows</text><rect x="147" y="0" width="58" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="176" y="18" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">macOS</text></g>
+  </g>
+
+  
+  <g transform="translate(606 58)">
+    <rect width="530" height="76" rx="12" fill="#161b22" stroke="#30363d"/>
+    <rect width="4" height="76" rx="2" fill="#3fb950"/>
+    <text x="24" y="30" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#9198a1" letter-spacing="0.6">TAG PUSH</text>
+    <text x="24" y="60" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="20" fill="#e6edf3">git push origin v1.2.0</text>
+    
+  </g>
+  <path d="M646 142 v14" stroke="#3fb950" stroke-width="2"/>
+  <path d="M640 149 l6 7 6 -7" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(606 172)">
+    <rect width="530" height="110" rx="12" fill="#161b22" stroke="#30363d"/>
+    <rect width="4" height="110" rx="2" fill="#3fb950"/>
+    <text x="24" y="30" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#9198a1" letter-spacing="0.6">WORKFLOW STEP</text>
+    <text x="24" y="60" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="20" fill="#e6edf3">uses: mikepenz/action-gh-release@v3</text>
+    <g transform="translate(24 0)"><rect x="0" y="74" width="66" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="33" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">files:</text><rect x="74" y="74" width="195" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="171.5" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">generate_release_notes:</text></g>
+  </g>
+  <path d="M646 290 v14" stroke="#3fb950" stroke-width="2"/>
+  <path d="M640 297 l6 7 6 -7" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(606 320)">
+    <rect width="530" height="110" rx="12" fill="#161b22" stroke="#30363d"/>
+    <rect width="4" height="110" rx="2" fill="#3fb950"/>
+    <text x="24" y="30" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="18" font-weight="600" fill="#9198a1" letter-spacing="0.6">PUBLISHED RELEASE</text>
+    <text x="24" y="60" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="20" fill="#e6edf3">Release v1.2.0</text>
+    <g transform="translate(24 0)"><rect x="0" y="74" width="73" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="36.5" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">app.zip</text><rect x="81" y="74" width="119" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="140.5" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">checksums.txt</text><rect x="208" y="74" width="104" height="26" rx="13" fill="#0d1117" stroke="#30363d"/><text x="260" y="92" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#9198a1" text-anchor="middle">outputs.url</text></g>
+  </g>
+</svg>
