@@ -32531,6 +32531,9 @@ const parseMakeLatest = (value) => {
     }
     return undefined;
 };
+const parseOnTagConflict = (value) => {
+    return value?.trim() === 'fail' ? 'fail' : 'update';
+};
 const parseToken = (env) => {
     const inputToken = env.INPUT_TOKEN?.trim();
     if (inputToken) {
@@ -32576,7 +32579,9 @@ const parseConfig = (env) => {
         input_previous_tag: env.INPUT_PREVIOUS_TAG?.trim() || undefined,
         input_append_body: env.INPUT_APPEND_BODY === 'true',
         input_make_latest: parseMakeLatest(env.INPUT_MAKE_LATEST),
-        input_concurrency: parseConcurrency(env.INPUT_CONCURRENCY)
+        input_concurrency: parseConcurrency(env.INPUT_CONCURRENCY),
+        input_on_tag_conflict: parseOnTagConflict(env.INPUT_ON_TAG_CONFLICT),
+        input_draft_during_upload: env.INPUT_DRAFT_DURING_UPLOAD?.trim() !== 'false'
     };
 };
 const normalizeGlobPattern = (pattern, platform = process.platform) => {
@@ -32652,6 +32657,15 @@ var mime_types = __nccwpck_require__(4096);
 
 
 
+// GitHub rejects publishing a draft when another release already claims the tag,
+// which happens when a concurrent job created the release while we were uploading.
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+const isTagConflict = (error) => {
+    const status = error?.status ?? error?.response?.status;
+    const errors = error?.response?.data?.errors ?? error?.errors;
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    return status === 422 && !!errors?.some((e) => e.code === 'already_exists' && e.field === 'tag_name');
+};
 class GitHubReleaser {
     github;
     constructor(github) {
@@ -32723,6 +32737,9 @@ class GitHubReleaser {
             release_id: params.release_id,
             draft: false
         });
+    }
+    async deleteRelease(params) {
+        return await this.github.rest.repos.deleteRelease(params);
     }
     allReleases(params) {
         const updatedParams = { per_page: 100, ...params };
@@ -32859,6 +32876,11 @@ const createNewRelease = async (tag, config, releaser, owner, repo, discussion_c
     if (target_commitish) {
         commitMessage = ` using commit "${target_commitish}"`;
     }
+    // Uploading into a draft keeps the release hidden until the assets are there, at the
+    // cost of a long window in which a concurrent job can claim the tag. Creating it
+    // published up front shrinks that window to this single call, which already recovers
+    // from `already_exists` below.
+    const draft = config.input_draft === true || config.input_draft_during_upload;
     console.log(`👩‍🏭 Creating new GitHub release for tag ${tag_name}${commitMessage}...`);
     try {
         const rel = await releaser.createRelease({
@@ -32867,7 +32889,7 @@ const createNewRelease = async (tag, config, releaser, owner, repo, discussion_c
             tag_name,
             name,
             body,
-            draft: true,
+            draft,
             prerelease,
             target_commitish,
             discussion_category_name,
@@ -33013,6 +33035,19 @@ const finalizeRelease = async (config, releaser, rel, maxRetries = 3) => {
         return data;
     }
     catch (error) {
+        // A concurrent job published a release for this tag while we were uploading.
+        // Retrying can never succeed, so either fail fast or adopt the existing release.
+        if (isTagConflict(error)) {
+            if (config.input_on_tag_conflict === 'fail') {
+                console.log(`❌ Another release already claims tag ${rel.tag_name} and on_tag_conflict is "fail"`);
+                throw error;
+            }
+            console.log(`⚠️ Another release already claims tag ${rel.tag_name}; updating that release instead...`);
+            await releaser
+                .deleteRelease({ owner, repo, release_id: rel.id })
+                .catch(err => console.warn(`⚠️ Failed to clean up draft release ${rel.id}: ${err}`));
+            return await release(config, releaser);
+        }
         console.warn(`error finalizing release: ${error}`);
         console.log(`retrying... (${maxRetries - 1} retries remaining)`);
         return finalizeRelease(config, releaser, rel, maxRetries - 1);
@@ -37380,7 +37415,10 @@ async function run() {
         });
         const releaser = new GitHubReleaser(gh);
         let rel = await release(config, releaser);
-        if (config.input_files && config.input_files?.length > 0) {
+        const uploadAssets = async (target) => {
+            if (!config.input_files || config.input_files.length === 0) {
+                return;
+            }
             const files = paths(config.input_files, config.input_working_directory);
             if (files.length === 0) {
                 if (config.input_fail_on_unmatched_files) {
@@ -37390,9 +37428,9 @@ async function run() {
                     warning(`🤔 ${config.input_files} not include valid file.`);
                 }
             }
-            const currentAssets = rel.assets;
+            const currentAssets = target.assets;
             const uploadFile = async (path) => {
-                const json = await upload(config, gh, uploadUrl(rel.upload_url), path, currentAssets);
+                const json = await upload(config, gh, uploadUrl(target.upload_url), path, currentAssets);
                 if (json) {
                     delete json.uploader;
                 }
@@ -37421,9 +37459,17 @@ async function run() {
             }
             const assets = results.filter(Boolean);
             setOutput('assets', assets);
-        }
+        };
+        await uploadAssets(rel);
         console.log('Finalizing release...');
+        const finalizedFrom = rel.id;
         rel = await finalizeRelease(config, releaser, rel);
+        if (rel.id !== finalizedFrom) {
+            // on_tag_conflict=update switched us to a release created by another job,
+            // so our assets have to be uploaded again onto it.
+            await uploadAssets(rel);
+            rel = await finalizeRelease(config, releaser, rel);
+        }
         info(`🎉 Release ready at ${rel.html_url}`);
         setOutput('url', rel.html_url);
         setOutput('id', rel.id.toString());

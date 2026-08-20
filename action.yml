@@ -66,6 +66,14 @@ inputs:
   append_body:
     description: "Append to existing body instead of overwriting it. Default is false."
     required: false
+  draft_during_upload:
+    description: "Create the release as a draft and publish it once the assets are uploaded. Defaults to true. Set to false to create the release published up front, which makes a concurrent job claiming the same tag far less likely, at the cost of the release being visible while assets are still uploading. Ignored when `draft` is true."
+    required: false
+    default: 'true'
+  on_tag_conflict:
+    description: "What to do when another job published a release for the same tag while this action was running. `update` (default) switches to updating that release, `fail` aborts."
+    required: false
+    default: 'update'
   make_latest:
     description: "Specifies whether this release should be set as the latest release for the repository. Drafts and prereleases cannot be set as latest. Can be `true`, `false`, or `legacy`. Uses GitHub api default if not provided"
     required: false

@@ -1,4 +1,4 @@
-import {asset, findTagFromReleases, mimeOrDefault, release, Release, Releaser} from '../src/github'
+import {asset, finalizeRelease, findTagFromReleases, mimeOrDefault, release, Release, Releaser} from '../src/github'
 
 import {assert, describe, it} from 'vitest'
 
@@ -43,6 +43,7 @@ describe('github', () => {
       createRelease: () => Promise.reject('Not implemented'),
       updateRelease: () => Promise.reject('Not implemented'),
       finalizeRelease: () => Promise.reject('Not implemented'),
+      deleteRelease: () => Promise.reject('Not implemented'),
       allReleases: async function* () {
         yield {data: [mockRelease]}
       }
@@ -254,6 +255,7 @@ describe('github', () => {
             }
           }),
         finalizeRelease: async () => {},
+        deleteRelease: async () => {},
         allReleases: async function* () {
           yield {
             data: [
@@ -299,5 +301,133 @@ describe('github', () => {
       assert.ok(result)
       assert.equal(result.id, 1)
     })
+  })
+})
+
+describe('finalizeRelease', () => {
+  const draft: Release = {
+    id: 1,
+    upload_url: 'https://uploads/repos/o/r/releases/1/assets{?name,label}',
+    html_url: 'https://draft',
+    tag_name: 'v1.0.0',
+    name: 'v1.0.0',
+    body: '',
+    target_commitish: 'main',
+    draft: true,
+    prerelease: false,
+    assets: []
+  }
+
+  const published: Release = {...draft, id: 2, draft: false, html_url: 'https://published'}
+
+  const tagConflict = {
+    status: 422,
+    response: {data: {errors: [{resource: 'Release', code: 'already_exists', field: 'tag_name'}]}}
+  }
+
+  const baseConfig = {
+    github_token: 't',
+    github_ref: 'refs/tags/v1.0.0',
+    github_repository: 'o/r',
+    input_files: [],
+    input_fail_on_unmatched_files: false,
+    input_generate_release_notes: false,
+    input_append_body: false,
+    input_make_latest: undefined,
+    input_concurrency: 4,
+    input_on_tag_conflict: 'update' as const
+  }
+
+  const releaserFor = (deleted: number[]): Releaser => ({
+    getReleaseByTag: async () => ({data: published}),
+    createRelease: () => Promise.reject('Not implemented'),
+    updateRelease: async () => ({data: published}),
+    finalizeRelease: () => Promise.reject(tagConflict),
+    deleteRelease: async ({release_id}) => {
+      deleted.push(release_id)
+    },
+    allReleases: async function* () {
+      yield {data: [published]}
+    }
+  })
+
+  it('adopts the conflicting release and drops the draft when on_tag_conflict is update', async () => {
+    const deleted: number[] = []
+    const result = await finalizeRelease(baseConfig, releaserFor(deleted), draft)
+    assert.equal(result.id, 2)
+    assert.deepEqual(deleted, [1])
+  })
+
+  it('rethrows when on_tag_conflict is fail', async () => {
+    const deleted: number[] = []
+    let thrown: any
+    try {
+      await finalizeRelease({...baseConfig, input_on_tag_conflict: 'fail'}, releaserFor(deleted), draft)
+    } catch (error) {
+      thrown = error
+    }
+    assert.equal(thrown?.status, 422)
+    assert.deepEqual(deleted, [])
+  })
+})
+
+describe('draft_during_upload', () => {
+  const baseConfig = {
+    github_token: 't',
+    github_ref: 'refs/tags/v1.0.0',
+    github_repository: 'o/r',
+    input_files: [],
+    input_fail_on_unmatched_files: false,
+    input_generate_release_notes: false,
+    input_append_body: false,
+    input_make_latest: undefined,
+    input_concurrency: 4,
+    input_on_tag_conflict: 'update' as const,
+    input_draft_during_upload: true
+  }
+
+  const capturingReleaser = (drafts: (boolean | undefined)[]): Releaser => ({
+    getReleaseByTag: () => Promise.reject({status: 404}),
+    createRelease: async params => {
+      drafts.push(params.draft)
+      return {
+        data: {
+          id: 1,
+          upload_url: 'u',
+          html_url: 'h',
+          tag_name: params.tag_name,
+          name: params.name,
+          body: params.body,
+          target_commitish: 'main',
+          draft: !!params.draft,
+          prerelease: false,
+          assets: []
+        }
+      }
+    },
+    updateRelease: () => Promise.reject('Not implemented'),
+    finalizeRelease: () => Promise.reject('Not implemented'),
+    deleteRelease: () => Promise.reject('Not implemented'),
+    allReleases: async function* () {
+      yield {data: []}
+    }
+  })
+
+  it('creates a draft by default', async () => {
+    const drafts: (boolean | undefined)[] = []
+    await release(baseConfig, capturingReleaser(drafts))
+    assert.deepEqual(drafts, [true])
+  })
+
+  it('creates the release published when disabled', async () => {
+    const drafts: (boolean | undefined)[] = []
+    await release({...baseConfig, input_draft_during_upload: false}, capturingReleaser(drafts))
+    assert.deepEqual(drafts, [false])
+  })
+
+  it('still creates a draft when draft is requested', async () => {
+    const drafts: (boolean | undefined)[] = []
+    await release({...baseConfig, input_draft_during_upload: false, input_draft: true}, capturingReleaser(drafts))
+    assert.deepEqual(drafts, [true])
   })
 })
