@@ -1,7 +1,10 @@
 import {
   alignAssetName,
   errorMessage,
+  expandHomePattern,
   isTag,
+  normalizeFilePattern,
+  normalizeGlobPattern,
   parseConfig,
   parseInputFiles,
   paths,
@@ -9,6 +12,8 @@ import {
   unmatchedPatterns,
   uploadUrl
 } from '../src/util'
+
+import * as pathLib from 'path'
 
 import {assert, describe, expect, it} from 'vitest'
 
@@ -526,11 +531,50 @@ describe('util', () => {
 
   describe('paths', () => {
     it('resolves files given a set of paths', async () => {
-      assert.deepStrictEqual(paths(['tests/data/**/*', 'tests/data/does/not/exist/*']), ['tests/data/foo/bar.txt'])
+      assert.deepStrictEqual(paths(['tests/data/foo/**/*', 'tests/data/does/not/exist/*']), ['tests/data/foo/bar.txt'])
     })
 
     it('resolves files relative to working_directory', async () => {
-      assert.deepStrictEqual(paths(['data/**/*'], 'tests'), ['tests/data/foo/bar.txt'])
+      assert.deepStrictEqual(paths(['data/foo/**/*'], 'tests'), ['tests/data/foo/bar.txt'])
+    })
+
+    // dot: true — wildcards match hidden files. node:fs globSync cannot express this,
+    // which is why this action still depends on `glob`.
+    it('matches hidden files with a wildcard', async () => {
+      assert.deepStrictEqual(paths(['tests/data/dotdir/.*']), ['tests/data/dotdir/.hidden.txt'])
+      assert.ok(paths(['tests/data/dotdir/*']).includes('tests/data/dotdir/.hidden.txt'))
+    })
+
+    // Escaping glob metacharacters is documented in action.yml and is likewise
+    // unsupported by node:fs globSync.
+    it('matches a literal filename containing glob metacharacters when escaped', async () => {
+      assert.deepStrictEqual(paths(['tests/data/dotdir/bracket\\[1\\].txt']), ['tests/data/dotdir/bracket[1].txt'])
+    })
+
+    it('expands brace groups into every matching file', async () => {
+      assert.deepStrictEqual(paths(['tests/data/{foo,dotdir}/*']).sort(), [
+        'tests/data/dotdir/.hidden.txt',
+        'tests/data/dotdir/bracket[1].txt',
+        'tests/data/foo/bar.txt'
+      ])
+    })
+
+    it('drops directories that match the pattern', async () => {
+      assert.deepStrictEqual(paths(['tests/data/*']), [])
+    })
+
+    // glob returns matches relative to the search root, so an absolute pattern comes
+    // back relative — still resolvable, because the search root is the process cwd.
+    it('resolves absolute patterns', async () => {
+      assert.deepStrictEqual(paths([pathLib.resolve('tests/data/foo/bar.txt')]), ['tests/data/foo/bar.txt'])
+    })
+
+    it('resolves absolute patterns against a working_directory', async () => {
+      assert.deepStrictEqual(paths([pathLib.resolve('tests/data/foo/bar.txt')], 'tests'), ['tests/data/foo/bar.txt'])
+    })
+
+    it('ignores patterns that match nothing', async () => {
+      assert.deepStrictEqual(paths(['tests/data/does/not/exist/*']), [])
     })
   })
 
@@ -543,6 +587,32 @@ describe('util', () => {
 
     it('resolves unmatched relative to working_directory', async () => {
       assert.deepStrictEqual(unmatchedPatterns(['data/does/not/exist/*'], 'tests'), ['data/does/not/exist/*'])
+    })
+
+    it('treats a pattern matching only directories as unmatched', async () => {
+      assert.deepStrictEqual(unmatchedPatterns(['tests/data/*']), ['tests/data/*'])
+    })
+
+    it('accepts a pattern matching a hidden file', async () => {
+      assert.deepStrictEqual(unmatchedPatterns(['tests/data/dotdir/.*']), [])
+    })
+  })
+
+  describe('normalizeFilePattern', () => {
+    it('rewrites backslashes to forward slashes on windows only', () => {
+      assert.equal(normalizeGlobPattern('dist\\bin\\*.zip', 'win32'), 'dist/bin/*.zip')
+      assert.equal(normalizeGlobPattern('dist\\bin\\*.zip', 'linux'), 'dist\\bin\\*.zip')
+    })
+
+    it('expands a leading ~ to the home directory', () => {
+      assert.equal(expandHomePattern('~', '/home/me'), '/home/me')
+      assert.equal(expandHomePattern('~/out/*.zip', '/home/me'), pathLib.join('/home/me', 'out/*.zip'))
+      assert.equal(expandHomePattern('~backup/*.zip', '/home/me'), '~backup/*.zip')
+      assert.equal(expandHomePattern('out/~/*.zip', '/home/me'), 'out/~/*.zip')
+    })
+
+    it('expands the home directory before normalizing separators', () => {
+      assert.equal(normalizeFilePattern('~\\out\\*.zip', 'win32', 'C:\\Users\\me'), 'C:/Users/me/out/*.zip')
     })
   })
 

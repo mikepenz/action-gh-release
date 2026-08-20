@@ -8,6 +8,11 @@ import {env} from 'process'
 async function run(): Promise<void> {
   try {
     const config = parseConfig(env)
+    // Actions only masks values it knows are secrets. A token built at runtime or read
+    // from a file is not masked, and failures below echo error text into the log.
+    if (config.github_token) {
+      core.setSecret(config.github_token)
+    }
     if (!config.input_tag_name && !isTag(config.github_ref) && !config.input_draft) {
       throw new Error(`⚠️ GitHub Releases requires a tag`)
     }
