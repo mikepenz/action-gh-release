@@ -16,6 +16,9 @@ on:
       - '**.md'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.event.pull_request.number }}-check
   cancel-in-progress: true
