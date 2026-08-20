@@ -32338,7 +32338,7 @@ function exportVariable(name, val) {
  * ```
  */
 function core_setSecret(secret) {
-    issueCommand('add-mask', {}, secret);
+    command_issueCommand('add-mask', {}, secret);
 }
 /**
  * Prepends inputPath to the PATH (for this action and future actions)
@@ -37988,6 +37988,11 @@ const external_process_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import
 async function run() {
     try {
         const config = parseConfig(external_process_namespaceObject.env);
+        // Actions only masks values it knows are secrets. A token built at runtime or read
+        // from a file is not masked, and failures below echo error text into the log.
+        if (config.github_token) {
+            core_setSecret(config.github_token);
+        }
         if (!config.input_tag_name && !isTag(config.github_ref) && !config.input_draft) {
             throw new Error(`⚠️ GitHub Releases requires a tag`);
         }

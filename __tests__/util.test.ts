@@ -526,11 +526,24 @@ describe('util', () => {
 
   describe('paths', () => {
     it('resolves files given a set of paths', async () => {
-      assert.deepStrictEqual(paths(['tests/data/**/*', 'tests/data/does/not/exist/*']), ['tests/data/foo/bar.txt'])
+      assert.deepStrictEqual(paths(['tests/data/foo/**/*', 'tests/data/does/not/exist/*']), ['tests/data/foo/bar.txt'])
     })
 
     it('resolves files relative to working_directory', async () => {
-      assert.deepStrictEqual(paths(['data/**/*'], 'tests'), ['tests/data/foo/bar.txt'])
+      assert.deepStrictEqual(paths(['data/foo/**/*'], 'tests'), ['tests/data/foo/bar.txt'])
+    })
+
+    // dot: true — wildcards match hidden files. node:fs globSync cannot express this,
+    // which is why this action still depends on `glob`.
+    it('matches hidden files with a wildcard', async () => {
+      assert.deepStrictEqual(paths(['tests/data/dotdir/.*']), ['tests/data/dotdir/.hidden.txt'])
+      assert.ok(paths(['tests/data/dotdir/*']).includes('tests/data/dotdir/.hidden.txt'))
+    })
+
+    // Escaping glob metacharacters is documented in action.yml and is likewise
+    // unsupported by node:fs globSync.
+    it('matches a literal filename containing glob metacharacters when escaped', async () => {
+      assert.deepStrictEqual(paths(['tests/data/dotdir/bracket\\[1\\].txt']), ['tests/data/dotdir/bracket[1].txt'])
     })
   })
 
