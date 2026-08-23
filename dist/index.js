@@ -34341,7 +34341,7 @@ const JSONParseV2 = (text, reviver) => {
 const MAX_INT = Number.MAX_SAFE_INTEGER.toString();
 const MAX_DIGITS = MAX_INT.length;
 const stringsOrLargeNumbers =
-  /"(?:[^"\\]|\\.)*"|-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/g;
+  /"(?:\\.|[^"])*"|-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/g;
 const noiseValueWithQuotes = /^"-?\d+n+"$/; // Noise - strings that match the custom format before being converted to it
 
 /**
@@ -34535,7 +34535,7 @@ class RequestError extends Error {
 
 
 // pkg/dist-src/version.js
-var dist_bundle_VERSION = "10.0.14";
+var dist_bundle_VERSION = "10.0.13";
 
 // pkg/dist-src/defaults.js
 var defaults_default = {
