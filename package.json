@@ -33,12 +33,12 @@
     "mime-types": "^3.0.2"
   },
   "devDependencies": {
-    "@types/mime-types": "^3.0.1",
-    "@types/node": "^24.12.2",
-    "@vercel/ncc": "^0.44.0",
-    "@vitest/coverage-v8": "^4.1.5",
+    "@types/mime-types": "3.0.1",
+    "@types/node": "24.13.3",
+    "@vercel/ncc": "0.44.1",
+    "@vitest/coverage-v8": "4.1.11",
     "prettier": "3.9.6",
-    "typescript": "^7.0.0",
-    "vitest": "^4.1.5"
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }
