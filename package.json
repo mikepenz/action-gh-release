@@ -36,9 +36,9 @@
     "@types/mime-types": "3.0.1",
     "@types/node": "24.19.2",
     "@vercel/ncc": "0.45.0",
-    "@vitest/coverage-v8": "5.1.0",
+    "@vitest/coverage-v8": "5.1.1",
     "prettier": "3.10.1",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   }
 }
